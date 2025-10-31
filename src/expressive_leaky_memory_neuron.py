@@ -1,30 +1,27 @@
-"""Expressive Leaky Memory (ELM) Neuron - Version 1.
+"""
+Expressive Leaky Memory (ELM) Neuron Model - Version 1.
 
-This module implements the original ELM neuron architecture, a biologically-inspired
-recurrent neural network unit designed for processing temporal spike-based data.
+This module implements the ELM neuron, a biologically-inspired
+phenomenological model of cortical neurons. The model efficiently
+captures sophisticated neuronal computations using multiple leaky
+memory units with learnable timescales and nonlinear synaptic
+integration via a Multilayer Perceptron (MLP).
 
-The ELM neuron features:
-    - Fast synaptic dynamics for input integration
-    - Intermediate branch aggregation layer
-    - Slow memory dynamics with heterogeneous time constants
-    - Multi-timescale processing for capturing both transient and persistent patterns
+Key architectural components:
+1. Synapse dynamics: Filters input through exponential traces
+2. Integration mechanism: MLP processes synaptic inputs + memory
+3. Memory dynamics: Leaky integrators with multiple timescales
+4. Output dynamics: Linear readout from memory state
 
-Key differences from standard RNNs:
-    - Explicit time constants (interpretable temporal scales)
-    - Multi-timescale dynamics built into architecture
-    - Biological inspiration from synapses, dendrites, and somatic integration
-    - Leaky integration instead of gating mechanisms
-
-Typical usage:
-    >>> model = ELM(num_input=128, num_output=2, num_memory=100)
-    >>> outputs = model(inputs)  # inputs: (batch, time, features)
-
-For more details on the architecture and mathematical formulation, see the
-class docstring for `ELM`.
+Reference:
+    Spieler, A., Rahaman, N., Martius, G., Schölkopf, B., &
+    Levina, A. (2023). The ELM Neuron: an Efficient and Expressive
+    Cortical Neuron Model Can Solve Long-Horizon Tasks.
+    arXiv preprint arXiv:2306.16922.
 """
 
 import math
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -38,70 +35,75 @@ from .modeling_utils import (
     inverse_scaled_sigmoid,
     scaled_sigmoid,
 )
-from .neuronio.neuronio_data_utils import DEFAULT_Y_TRAIN_SOMA_SCALE
+from .neuronio.neuronio_data_utils import (
+    DEFAULT_Y_TRAIN_SOMA_SCALE
+)
 
-# Supported input routing strategies
-PREPROCESS_CONFIGURATIONS = [None, "random_routing", "neuronio_routing"]
+# Valid preprocessing/routing configurations
+PREPROCESS_CONFIGURATIONS = [
+    None,
+    "random_routing",
+    "neuronio_routing"
+]
 
 
 class ELM(jit.ScriptModule):
-    """Expressive Leaky Memory (ELM) neuron model (v1).
+    """
+    Expressive Leaky Memory (ELM) neuron model (Version 1).
 
-    A biologically-inspired recurrent neural network unit that combines fast synaptic
-    dynamics with slower memory dynamics to process temporal spike-based data.
+    The ELM neuron processes inputs through synapse dynamics,
+    integrates them via an MLP, and maintains temporal dependencies
+    through multiple leaky memory units with distinct timescales.
 
-    Architecture:
-        1. Synapse Layer: Fast-decaying states that receive and filter input signals
-        2. Branch Layer: Intermediate aggregation of synaptic inputs into branches
-        3. Memory Layer: Slow-decaying states that maintain long-term dependencies
+    **Key differences from Branch-ELM (v2)**:
+    - Processes all synaptic inputs directly (no branch reduction)
+    - Fixed synapse weights (not learnable)
+    - Memory update: m_t = κ_m * m_{t-1} + λ * (1 - κ_m) * Δm_t
 
-    Dynamics:
-        At each timestep t, the model computes:
-
-        Synapse update:
-            s_t = κ_s * s_{t-1} + w_s * x_t
-
-        Branch aggregation:
-            b_t = Σ_{j∈branch_i} s_t[j]
-
-        Memory update:
-            Δm_t = tanh(MLP([b_t; κ_m * m_{t-1}]))
-            m_t = κ_m * m_{t-1} + λ * (1 - κ_m) * Δm_t
-
-        Output:
-            y_t = W_y * m_t
-
-    where:
-        - κ_s, κ_m are decay factors derived from time constants τ_s, τ_m
-        - w_s are learnable synaptic weights
-        - λ is a scaling factor for memory updates
-        - MLP is a multi-layer perceptron
+    **Architecture flow**:
+        x_t → [synapse dynamics] → s_t →
+        [MLP(s_t, m_{t-1})] → Δm_t →
+        [memory update] → m_t → [linear readout] → y_t
 
     Args:
-        num_input: Number of input features/channels
-        num_output: Number of output features/channels
-        num_memory: Number of memory units (slow dynamics). Default: 100
-        lambda_value: Memory update scaling factor (λ). Default: 5.0
-        mlp_num_layers: Number of hidden layers in the MLP. Default: 1
-        mlp_hidden_size: Hidden dimension of MLP layers. Default: 2*num_memory
-        mlp_activation: Activation function ("relu" or "silu"). Default: "relu"
-        tau_s_value: Synapse time constant in timesteps. Default: 5.0
-        memory_tau_min: Minimum memory time constant in timesteps. Default: 1.0
-        memory_tau_max: Maximum memory time constant in timesteps. Default: 1000.0
-        learn_memory_tau: Whether memory time constants are learnable. Default: False
-        w_s_value: Initial value for synaptic weights. Default: 0.5
-        num_branch: Number of branches (groups of synapses). Default: num_input
-        num_synapse_per_branch: Number of synapses per branch. Default: 1
-        input_to_synapse_routing: Input routing strategy (None, "random_routing",
-            "neuronio_routing"). Default: None
-        delta_t: Temporal resolution (timestep size). Default: 1.0
+        num_input: Input dimension (number of synaptic inputs)
+        num_output: Output dimension
+        num_memory: Number of memory units (default: 100)
+            Typical values: 15-20 for NeuronIO, 100 for long tasks
+        lambda_value: Memory update scaling factor (default: 5.0)
+            Controls magnitude of memory updates
+        mlp_num_layers: Number of MLP hidden layers (default: 1)
+        mlp_hidden_size: MLP hidden dimension (default: 2*num_memory)
+        mlp_activation: MLP activation function ('relu' or 'silu')
+        tau_s_value: Synapse time constant in ms (default: 5.0)
+        memory_tau_min: Min memory timescale in ms (default: 1.0)
+        memory_tau_max: Max memory timescale in ms (default: 1000.0)
+        learn_memory_tau: Whether to learn memory timescales
+        w_s_value: Initial synapse weight value (default: 0.5)
+        num_branch: Number of branches for routing (default: num_input)
+        num_synapse_per_branch: Synapses per branch (default: 1)
+        input_to_synapse_routing: Routing strategy
+            (None, 'random_routing', 'neuronio_routing')
+        delta_t: Fictitious timestep in ms (default: 1.0)
+
+    Attributes:
+        tau_m: Memory timescales (property, bounded by tau_min/max)
+        kappa_m: Memory decay factors = exp(-delta_t / tau_m)
+        kappa_s: Synapse decay factors = exp(-delta_t / tau_s)
+        w_s: Synapse weights (property, ReLU-activated)
 
     Example:
-        >>> model = ELM(num_input=128, num_output=2, num_memory=100)
-        >>> inputs = torch.randn(32, 1000, 128)  # (batch, time, features)
-        >>> outputs = model(inputs)  # (32, 1000, 2)
+        >>> model = ELM(
+        ...     num_input=1278,
+        ...     num_output=2,
+        ...     num_memory=20,
+        ...     lambda_value=5.0
+        ... )
+        >>> X = torch.randn(8, 100, 1278)  # (batch, time, input)
+        >>> Y = model(X)  # (batch, time, output)
     """
 
+    # JIT script constants for compilation
     __constants__ = [
         "num_input",
         "num_output",
@@ -136,39 +138,56 @@ class ELM(jit.ScriptModule):
         num_synapse_per_branch: int = 1,
         input_to_synapse_routing: Optional[str] = None,
         delta_t: float = 1.0,
-    ):
+    ) -> None:
+        """Initialize the ELM neuron model."""
         super(ELM, self).__init__()
 
-        # Store basic configuration
-        self.num_input, self.num_output = num_input, num_output
+        # Store basic dimensions
+        self.num_input = num_input
+        self.num_output = num_output
         self.num_memory = num_memory
         self.lambda_value = lambda_value
         self.mlp_num_layers = mlp_num_layers
         self.mlp_activation = mlp_activation
-        self.memory_tau_min, self.memory_tau_max = memory_tau_min, memory_tau_max
+
+        # Store timescale bounds
+        self.memory_tau_min = memory_tau_min
+        self.memory_tau_max = memory_tau_max
         self.learn_memory_tau = learn_memory_tau
-        self.tau_s_value, self.w_s_value = tau_s_value, w_s_value
+
+        # Store synapse parameters
+        self.tau_s_value = tau_s_value
+        self.w_s_value = w_s_value
         self.num_synapse_per_branch = num_synapse_per_branch
         self.input_to_synapse_routing = input_to_synapse_routing
         self.delta_t = delta_t
 
-        # Derive neuron architecture properties
-        # Hidden size defaults to 2x memory dimension if not specified
-        self.mlp_hidden_size = mlp_hidden_size if mlp_hidden_size else 2 * num_memory
-        # Number of branches defaults to number of inputs (1-to-1 mapping)
-        self.num_branch = self.num_input if num_branch is None else num_branch
-        # MLP receives branch activities concatenated with memory states
+        # Derived properties
+        self.mlp_hidden_size = (
+            mlp_hidden_size if mlp_hidden_size
+            else 2 * num_memory
+        )
+        self.num_branch = (
+            self.num_input if num_branch is None
+            else num_branch
+        )
         self.num_mlp_input = self.num_branch + num_memory
-        # Total synapses = synapses per branch × number of branches
-        self.num_synapse = num_synapse_per_branch * self.num_branch
+        self.num_synapse = (
+            num_synapse_per_branch * self.num_branch
+        )
 
         # Validate configuration
-        # Either num_synapse matches num_input (direct mapping) or routing is specified
-        assert self.num_synapse == num_input or input_to_synapse_routing is not None
-        assert self.input_to_synapse_routing in PREPROCESS_CONFIGURATIONS
+        assert (
+            self.num_synapse == num_input
+            or input_to_synapse_routing is not None
+        ), "Mismatch: num_synapse != num_input without routing"
+        assert (
+            self.input_to_synapse_routing
+            in PREPROCESS_CONFIGURATIONS
+        ), f"Invalid routing: {input_to_synapse_routing}"
 
-        # Initialize learnable components
-        # MLP: maps [branch_states; memory_states] → memory_updates
+        # Initialize MLP for nonlinear integration
+        # Maps [branch_activations, previous_memory] to memory_update
         self.mlp = MLP(
             self.num_mlp_input,
             self.mlp_hidden_size,
@@ -176,340 +195,438 @@ class ELM(jit.ScriptModule):
             mlp_num_layers,
             mlp_activation,
         )
-        # Synaptic weights: will be constrained to non-negative via ReLU
+
+        # Initialize synapse weights (fixed, not learned in v1)
+        # ReLU activation ensures positivity
         self._proto_w_s = nn.parameter.Parameter(
             torch.full((self.num_synapse,), w_s_value)
         )
-        # Output projection: maps memory states to output
+
+        # Initialize output layer (linear readout from memory)
         self.w_y = nn.Linear(num_memory, num_output)
 
-        # Initialize synapse time constants (fixed, not learned)
-        # All synapses share the same time constant in v1
+        # Initialize synapse time constants (fixed)
         tau_s = torch.full((self.num_synapse,), tau_s_value)
-        self.tau_s = nn.parameter.Parameter(tau_s, requires_grad=False)
+        self.tau_s = nn.parameter.Parameter(
+            tau_s,
+            requires_grad=False
+        )
 
-        # Initialize memory time constants (optionally learnable)
-        # Log-spaced distribution across [memory_tau_min, memory_tau_max]
-        # This creates heterogeneous timescales for multi-scale temporal processing
+        # Initialize memory time constants
+        # Logspace distribution ensures diverse timescales
         _proto_tau_m = torch.logspace(
             math.log10(memory_tau_min + 1e-6),
             math.log10(memory_tau_max - 1e-6),
             num_memory,
         )
-        # Transform to unconstrained space for optimization
-        # During forward pass, inverse transform ensures values stay in [min, max]
+        # Apply inverse scaled sigmoid for bounded optimization
         _proto_tau_m = inverse_scaled_sigmoid(
-            _proto_tau_m, memory_tau_min, memory_tau_max
+            _proto_tau_m,
+            memory_tau_min,
+            memory_tau_max
         )
         self._proto_tau_m = nn.parameter.Parameter(
-            _proto_tau_m, requires_grad=learn_memory_tau
+            _proto_tau_m,
+            requires_grad=learn_memory_tau
         )
 
-        # Create input-to-synapse routing indices
-        # Stored as parameters for serialization and device transfer
-        routing_artifacts = self.create_input_to_synapse_indices()
-        self.input_to_synapse_indices = nn.parameter.Parameter(
-            routing_artifacts[0], requires_grad=False
+        # Create input-to-synapse routing (if specified)
+        # Stored as Parameters for JIT compatibility
+        routing_artifacts = (
+            self.create_input_to_synapse_indices()
         )
-        # Mask for handling padding in overlapping routing schemes
+        self.input_to_synapse_indices = nn.parameter.Parameter(
+            routing_artifacts[0],
+            requires_grad=False
+        )
         self.valid_indices_mask = nn.parameter.Parameter(
-            routing_artifacts[1], requires_grad=False
+            routing_artifacts[1],
+            requires_grad=False
         )
 
     @property
-    def tau_m(self):
-        """Memory time constants in timesteps.
+    def tau_m(self) -> torch.Tensor:
+        """
+        Memory timescales (bounded by tau_min and tau_max).
+
+        Uses scaled sigmoid to ensure timescales remain within
+        specified bounds during optimization.
 
         Returns:
-            torch.Tensor: Shape (num_memory,), values in [memory_tau_min, memory_tau_max].
-                Longer time constants → slower decay → longer memory.
+            Tensor of shape (num_memory,) with timescales in ms
         """
         return scaled_sigmoid(
-            self._proto_tau_m, self.memory_tau_min, self.memory_tau_max
+            self._proto_tau_m,
+            self.memory_tau_min,
+            self.memory_tau_max
         )
 
     @property
-    def kappa_m(self):
-        """Memory decay factors.
+    def kappa_m(self) -> torch.Tensor:
+        """
+        Memory decay factors.
+
+        Computed as exp(-delta_t / tau_m), representing the
+        fraction of previous memory retained after one timestep.
 
         Returns:
-            torch.Tensor: Shape (num_memory,), values in (0, 1).
-                Computed as κ_m = exp(-Δt / τ_m).
-                Higher values → slower decay → more persistent memory.
+            Tensor of shape (num_memory,) with values in (0, 1)
         """
-        return torch.exp(-self.delta_t / torch.clamp(self.tau_m, min=1e-6))
+        return torch.exp(
+            -self.delta_t / torch.clamp(self.tau_m, min=1e-6)
+        )
 
     @property
-    def kappa_s(self):
-        """Synapse decay factors.
+    def kappa_s(self) -> torch.Tensor:
+        """
+        Synapse decay factors.
+
+        Computed as exp(-delta_t / tau_s), representing the
+        fraction of previous synapse trace retained.
 
         Returns:
-            torch.Tensor: Shape (num_synapse,), values in (0, 1).
-                Computed as κ_s = exp(-Δt / τ_s).
-                Higher values → slower decay → longer synaptic integration.
+            Tensor of shape (num_synapse,) with values in (0, 1)
         """
-        return torch.exp(-self.delta_t / torch.clamp(self.tau_s, min=1e-6))
+        return torch.exp(
+            -self.delta_t / torch.clamp(self.tau_s, min=1e-6)
+        )
 
     @property
-    def w_s(self):
-        """Synaptic weights (non-negative).
+    def w_s(self) -> torch.Tensor:
+        """
+        Synapse weights (non-negative via ReLU).
 
         Returns:
-            torch.Tensor: Shape (num_synapse,), values >= 0.
-                Learnable weights constrained to non-negative via ReLU activation.
+            Tensor of shape (num_synapse,) with non-negative values
         """
         return torch.relu(self._proto_w_s)
 
-    def create_input_to_synapse_indices(self):
-        """Create indices for routing inputs to synapses.
+    def create_input_to_synapse_indices(
+        self
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Create input-to-synapse routing indices and validity mask.
+
+        Implements two routing strategies:
+        1. random_routing: Random selection of input indices
+        2. neuronio_routing: Structured assignment for
+           biophysical neuron modeling (interlocks
+           excitatory/inhibitory, creates overlapping windows)
 
         Returns:
-            Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
-                - input_to_synapse_indices: Indices for selecting inputs, shape (num_synapse,)
-                - valid_indices_mask: Binary mask for valid connections, shape (num_synapse,)
-                Returns (None, None) if no routing is specified.
-
-        Routing strategies:
-            - "random_routing": Random assignment of inputs to synapses
-            - "neuronio_routing": Specialized routing for biological data:
-                1. Interlaces excitatory/inhibitory inputs
-                2. Creates overlapping windows for spatial locality
-                3. Assigns neighboring inputs to the same branch
+            Tuple of (indices, mask):
+            - indices: Tensor mapping synapses to input indices
+            - mask: Binary mask indicating valid indices
         """
         if self.input_to_synapse_routing == "random_routing":
-            # Randomly select num_synapse inputs from num_input channels
-            # This creates a sparse, random connectivity pattern
+            # Randomly select num_synapse from num_input
             input_to_synapse_indices = torch.randint(
-                self.num_input, (self.num_synapse,)
+                self.num_input,
+                (self.num_synapse,)
             )
-            # All connections are valid (no masking needed)
-            return input_to_synapse_indices, torch.ones_like(input_to_synapse_indices)
+            return (
+                input_to_synapse_indices,
+                torch.ones_like(input_to_synapse_indices)
+            )
 
-        elif self.input_to_synapse_routing == "neuronio_routing":
-            # Validate that windows can accommodate all inputs
+        elif (
+            self.input_to_synapse_routing == "neuronio_routing"
+        ):
+            # Validate configuration
             assert (
                 math.ceil(self.num_input / self.num_branch)
                 <= self.num_synapse_per_branch
-            ), "num_synapse_per_branch too small for neuronio_routing"
+            ), "Insufficient synapses per branch for input size"
 
-            # Step 1: Interlace excitatory (even) and inhibitory (odd) inputs
-            # Pattern: [0, N/2, 1, N/2+1, 2, N/2+2, ...]
-            interlocking_indices = create_interlocking_indices(self.num_input)
-
-            # Step 2: Create overlapping windows for spatial receptive fields
-            # Each branch receives inputs from a sliding window
-            overlapping_indices, valid_indices_mask = create_overlapping_window_indices(
-                self.num_input, self.num_branch, self.num_synapse_per_branch
+            # Interleave excitatory and inhibitory inputs
+            interlocking_indices = create_interlocking_indices(
+                self.num_input
             )
 
-            # Combine: apply interlocking to windowed indices
-            input_to_synapse_indices = interlocking_indices[overlapping_indices]
+            # Assign neighboring inputs to same branch
+            # (exploits spatial locality)
+            overlapping_indices, valid_indices_mask = (
+                create_overlapping_window_indices(
+                    self.num_input,
+                    self.num_branch,
+                    self.num_synapse_per_branch
+                )
+            )
+
+            # Compose the two transformations
+            input_to_synapse_indices = (
+                interlocking_indices[overlapping_indices]
+            )
 
             return input_to_synapse_indices, valid_indices_mask
         else:
-            # No routing: assume direct 1-to-1 mapping
-            return None, None
+            # No routing: direct mapping (None case)
+            return (
+                torch.tensor([]),
+                torch.tensor([])
+            )
 
-    def route_input_to_synapses(self, x):
-        """Apply input-to-synapse routing transformation.
+    def route_input_to_synapses(
+        self,
+        x: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Apply input-to-synapse routing if configured.
 
         Args:
-            x: Input tensor, shape (batch_size, T, num_input)
+            x: Input tensor (batch, time, num_input)
 
         Returns:
-            torch.Tensor: Routed inputs, shape (batch_size, T, num_synapse)
+            Routed input tensor (batch, time, num_synapse)
         """
         if self.input_to_synapse_routing is not None:
-            # Select specified input channels for each synapse
-            x = torch.index_select(x, 2, self.input_to_synapse_indices)
-            # Apply validity mask (zeros out padded connections)
+            # Select specified input indices for each synapse
+            x = torch.index_select(
+                x,
+                2,
+                self.input_to_synapse_indices
+            )
+            # Apply validity mask (zero out invalid indices)
             x = x * self.valid_indices_mask
         return x
 
     @jit.script_method
-    def dynamics(self, x, s_prev, m_prev, w_s, kappa_s, kappa_m):
-        """Compute the ELM dynamics for a single timestep.
+    def dynamics(
+        self,
+        x: torch.Tensor,
+        s_prev: torch.Tensor,
+        m_prev: torch.Tensor,
+        w_s: torch.Tensor,
+        kappa_s: torch.Tensor,
+        kappa_m: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Compute ELM dynamics for a single timestep.
 
-        This is the core recurrent update that implements the three-stage
-        computation: synapse → branch → memory → output.
+        This is the core computation implementing:
+        1. Synapse dynamics: s_t = κ_s * s_{t-1} + w_s * x_t
+        2. Branch reduction: sum synapses per branch
+        3. Memory proposal: Δm_t = tanh(MLP([branch, κ_m*m_{t-1}]))
+        4. Memory update: m_t = κ_m*m_{t-1} + λ*(1-κ_m)*Δm_t
+        5. Output: y_t = W_y * m_t
 
         Args:
-            x: Input at time t, shape (batch_size, num_synapse)
-            s_prev: Previous synapse states, shape (batch_size, num_synapse)
-            m_prev: Previous memory states, shape (batch_size, num_memory)
-            w_s: Synaptic weights, shape (num_synapse,)
-            kappa_s: Synapse decay factors, shape (num_synapse,)
-            kappa_m: Memory decay factors, shape (num_memory,)
+            x: Current input (batch, num_synapse)
+            s_prev: Previous synapse state (batch, num_synapse)
+            m_prev: Previous memory state (batch, num_memory)
+            w_s: Synapse weights (num_synapse,)
+            kappa_s: Synapse decay factors (num_synapse,)
+            kappa_m: Memory decay factors (num_memory,)
 
         Returns:
-            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-                - y_t: Output at time t, shape (batch_size, num_output)
-                - s_t: Updated synapse states, shape (batch_size, num_synapse)
-                - m_t: Updated memory states, shape (batch_size, num_memory)
+            Tuple of (y_t, s_t, m_t):
+            - y_t: Output (batch, num_output)
+            - s_t: Updated synapse state (batch, num_synapse)
+            - m_t: Updated memory state (batch, num_memory)
         """
         batch_size, _ = x.shape
 
-        # Synapse dynamics: leaky integration of weighted inputs
+        # Update synapse traces (exponential filtering)
         # s_t = κ_s * s_{t-1} + w_s * x_t
         s_t = kappa_s * s_prev + w_s * x
 
-        # Branch aggregation: sum synapses within each branch
-        # Reshape: (batch, num_synapse) → (batch, num_branch, num_synapse_per_branch)
-        # Then sum over synapses per branch
-        syn_input = s_t.view(batch_size, self.num_branch, -1).sum(dim=-1)
-
-        # Memory update: MLP processes [branch_states; decayed_memory]
-        # Δm_t = tanh(MLP([b_t; κ_m * m_{t-1}]))
-        delta_m_t = custom_tanh(
-            self.mlp(torch.cat([syn_input, kappa_m * m_prev], dim=-1))
+        # Reduce synapse traces to branch activations
+        # Sum over synapses belonging to each branch
+        syn_input = (
+            s_t.view(batch_size, self.num_branch, -1)
+            .sum(dim=-1)
         )
 
-        # Memory dynamics: leaky integration with scaled update
-        # m_t = κ_m * m_{t-1} + λ * (1 - κ_m) * Δm_t
-        # The (1 - κ_m) term ensures consistent update magnitude across timescales
-        m_t = kappa_m * m_prev + self.lambda_value * (1 - kappa_m) * delta_m_t
+        # Compute memory update proposal via MLP
+        # Input: [branch_activations, decayed_previous_memory]
+        # Output: Δm_t (memory update proposal)
+        delta_m_t = custom_tanh(
+            self.mlp(
+                torch.cat([syn_input, kappa_m * m_prev], dim=-1)
+            )
+        )
 
-        # Output projection: linear mapping from memory to output space
+        # Update memory with bounded growth
+        # m_t = forget * m_{t-1} + input_scale * update
+        # where input_scale = λ * (1 - κ_m) ensures stability
+        m_t = (
+            kappa_m * m_prev
+            + self.lambda_value * (1 - kappa_m) * delta_m_t
+        )
+
+        # Compute output via linear readout
         y_t = self.w_y(m_t)
 
         return y_t, s_t, m_t
 
     @jit.script_method
-    def forward(self, X):
-        """Forward pass through the ELM neuron.
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
+        """
+        Process a sequence through the ELM neuron.
 
-        Processes a batch of input sequences by iteratively applying the
-        dynamics function for each timestep. States are initialized to zero
-        at the start of each sequence.
+        Iteratively applies dynamics() for each timestep,
+        maintaining synapse and memory states across time.
 
         Args:
-            X: Input sequences, shape (batch_size, T, num_input)
-                - batch_size: Number of sequences
-                - T: Sequence length (number of timesteps)
-                - num_input: Input feature dimension
+            X: Input sequence (batch, time, num_input)
 
         Returns:
-            torch.Tensor: Output sequences, shape (batch_size, T, num_output)
+            Output sequence (batch, time, num_output)
         """
         batch_size, T, _ = X.shape
 
-        # Get current parameter values
+        # Cache frequently used values
         w_s = self.w_s
         kappa_s, kappa_m = self.kappa_s, self.kappa_m
 
-        # Initialize synapse and memory states to zero
-        s_prev = torch.zeros(batch_size, len(kappa_s), device=X.device)
-        m_prev = torch.zeros(batch_size, len(kappa_m), device=X.device)
+        # Initialize states to zero
+        s_prev = torch.zeros(
+            batch_size,
+            len(kappa_s),
+            device=X.device
+        )
+        m_prev = torch.zeros(
+            batch_size,
+            len(kappa_m),
+            device=X.device
+        )
 
-        # Collect outputs for each timestep
-        outputs = torch.jit.annotate(List[torch.Tensor], [])
+        # Accumulate outputs (JIT-compatible list annotation)
+        outputs = torch.jit.annotate(
+            List[torch.Tensor],
+            []
+        )
 
-        # Apply input routing (if configured)
+        # Apply input routing once for efficiency
         inputs = self.route_input_to_synapses(X)
 
-        # Iterate through sequence, updating states at each timestep
+        # Process each timestep
         for t in range(T):
             y_t, s_prev, m_prev = self.dynamics(
-                inputs[:, t], s_prev, m_prev, w_s, kappa_s, kappa_m
+                inputs[:, t],
+                s_prev,
+                m_prev,
+                w_s,
+                kappa_s,
+                kappa_m
             )
             outputs.append(y_t)
 
-        # Stack outputs: list of (batch, num_output) → (batch, T, num_output)
+        # Stack outputs along time dimension
         return torch.stack(outputs, dim=-2)
 
     @jit.script_method
     def neuronio_eval_forward(
-        self, X, y_train_soma_scale: float = DEFAULT_Y_TRAIN_SOMA_SCALE
-    ):
-        """Forward pass for NeuronIO evaluation with post-processing.
+        self,
+        X: torch.Tensor,
+        y_train_soma_scale: float = DEFAULT_Y_TRAIN_SOMA_SCALE
+    ) -> torch.Tensor:
+        """
+        Forward pass with NeuronIO-specific postprocessing.
 
-        Specialized forward pass for the NeuronIO dataset that applies
-        appropriate activations and scaling to raw model outputs.
+        Applies sigmoid to spike predictions and scales soma voltage
+        according to NeuronIO dataset conventions.
 
         Args:
-            X: Input sequences, shape (batch_size, T, num_input)
-            y_train_soma_scale: Scaling factor used during training for soma voltage.
-                Default: DEFAULT_Y_TRAIN_SOMA_SCALE
+            X: Input sequence (batch, time, num_input)
+            y_train_soma_scale: Soma voltage scaling factor
 
         Returns:
-            torch.Tensor: Predictions, shape (batch_size, T, 2) where:
-                - [..., 0]: Spike probabilities in [0, 1] (sigmoid-activated)
-                - [..., 1]: Soma voltage predictions (rescaled to original units)
+            Postprocessed outputs (batch, time, 2)
+            where output[..., 0] = spike probability
+            and output[..., 1] = scaled soma voltage
         """
-        # Get raw outputs from model
         outputs = self.forward(X)
+
+        # Extract spike and soma predictions
         spike_pred, soma_pred = outputs[..., 0], outputs[..., 1]
 
-        # Apply sigmoid to spike prediction → probability in [0, 1]
+        # Apply sigmoid to spike (probability)
         spike_pred = torch.sigmoid(spike_pred)
 
-        # Rescale soma prediction back to original voltage units
-        soma_pred = 1 / y_train_soma_scale * soma_pred
+        # Rescale soma voltage
+        soma_pred = (1 / y_train_soma_scale) * soma_pred
 
         return torch.stack([spike_pred, soma_pred], dim=-1)
 
     @jit.script_method
     def neuronio_viz_forward(
-        self, X, y_train_soma_scale: float = DEFAULT_Y_TRAIN_SOMA_SCALE
-    ):
-        """Forward pass with internal state recording for visualization.
+        self,
+        X: torch.Tensor,
+        y_train_soma_scale: float = DEFAULT_Y_TRAIN_SOMA_SCALE
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Forward pass returning outputs and internal states.
 
-        Similar to neuronio_eval_forward but also returns the complete history
-        of internal synapse and memory states for analysis and visualization.
+        Useful for visualization and analysis of neuron dynamics.
 
         Args:
-            X: Input sequences, shape (batch_size, T, num_input)
-            y_train_soma_scale: Scaling factor used during training for soma voltage.
-                Default: DEFAULT_Y_TRAIN_SOMA_SCALE
+            X: Input sequence (batch, time, num_input)
+            y_train_soma_scale: Soma voltage scaling factor
 
         Returns:
-            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-                - outputs: Predictions, shape (batch_size, T, 2)
-                    - [..., 0]: Spike probabilities
-                    - [..., 1]: Soma voltage predictions
-                - s_record: Synapse state history, shape (batch_size, T, num_synapse)
-                - m_record: Memory state history, shape (batch_size, T, num_memory)
-
-        Note:
-            This method is more memory-intensive than neuronio_eval_forward due to
-            storing all internal states. Use only when visualization is needed.
+            Tuple of (outputs, synapse_record, memory_record):
+            - outputs: (batch, time, 2) postprocessed predictions
+            - synapse_record: (batch, time, num_synapse) traces
+            - memory_record: (batch, time, num_memory) states
         """
         batch_size, T, _ = X.shape
 
-        # Get current parameter values
+        # Cache values
         w_s = self.w_s
         kappa_s, kappa_m = self.kappa_s, self.kappa_m
 
-        # Initialize states to zero
-        s_prev = torch.zeros(batch_size, len(kappa_s), device=X.device)
-        m_prev = torch.zeros(batch_size, len(kappa_m), device=X.device)
+        # Initialize states
+        s_prev = torch.zeros(
+            batch_size,
+            len(kappa_s),
+            device=X.device
+        )
+        m_prev = torch.zeros(
+            batch_size,
+            len(kappa_m),
+            device=X.device
+        )
 
-        # Prepare storage for outputs and internal states
-        outputs = torch.jit.annotate(List[torch.Tensor], [])
-        s_record = torch.jit.annotate(List[torch.Tensor], [])
-        m_record = torch.jit.annotate(List[torch.Tensor], [])
+        # Accumulate outputs and states
+        outputs = torch.jit.annotate(
+            List[torch.Tensor],
+            []
+        )
+        s_record = torch.jit.annotate(
+            List[torch.Tensor],
+            []
+        )
+        m_record = torch.jit.annotate(
+            List[torch.Tensor],
+            []
+        )
 
-        # Apply input routing
         inputs = self.route_input_to_synapses(X)
 
-        # Iterate through sequence, recording states at each timestep
+        # Process each timestep, recording internal states
         for t in range(T):
             y_t, s_prev, m_prev = self.dynamics(
-                inputs[:, t], s_prev, m_prev, w_s, kappa_s, kappa_m
+                inputs[:, t],
+                s_prev,
+                m_prev,
+                w_s,
+                kappa_s,
+                kappa_m
             )
             outputs.append(y_t)
-            s_record.append(s_prev)  # Record synapse states
-            m_record.append(m_prev)  # Record memory states
+            s_record.append(s_prev)
+            m_record.append(m_prev)
 
-        # Stack all recorded values
+        # Stack along time dimension
         outputs = torch.stack(outputs, dim=-2)
         s_record = torch.stack(s_record, dim=-2)
         m_record = torch.stack(m_record, dim=-2)
 
-        # Post-process outputs (same as neuronio_eval_forward)
+        # Postprocess outputs
         spike_pred, soma_pred = outputs[..., 0], outputs[..., 1]
         spike_pred = torch.sigmoid(spike_pred)
-        soma_pred = 1 / y_train_soma_scale * soma_pred
+        soma_pred = (1 / y_train_soma_scale) * soma_pred
         outputs = torch.stack([spike_pred, soma_pred], dim=-1)
 
         return outputs, s_record, m_record
