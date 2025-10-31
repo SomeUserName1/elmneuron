@@ -21,7 +21,6 @@ Reference:
 """
 
 import math
-from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -35,16 +34,10 @@ from .modeling_utils import (
     inverse_scaled_sigmoid,
     scaled_sigmoid,
 )
-from .neuronio.neuronio_data_utils import (
-    DEFAULT_Y_TRAIN_SOMA_SCALE
-)
+from .neuronio.neuronio_data_utils import DEFAULT_Y_TRAIN_SOMA_SCALE
 
 # Valid preprocessing/routing configurations
-PREPROCESS_CONFIGURATIONS = [
-    None,
-    "random_routing",
-    "neuronio_routing"
-]
+PREPROCESS_CONFIGURATIONS = [None, "random_routing", "neuronio_routing"]
 
 
 class ELM(jit.ScriptModule):
@@ -127,16 +120,16 @@ class ELM(jit.ScriptModule):
         num_memory: int = 100,
         lambda_value: float = 5.0,
         mlp_num_layers: int = 1,
-        mlp_hidden_size: Optional[int] = None,
+        mlp_hidden_size: int | None = None,
         mlp_activation: str = "relu",
         tau_s_value: float = 5.0,
         memory_tau_min: float = 1.0,
         memory_tau_max: float = 1000.0,
         learn_memory_tau: bool = False,
         w_s_value: float = 0.5,
-        num_branch: Optional[int] = None,
+        num_branch: int | None = None,
         num_synapse_per_branch: int = 1,
-        input_to_synapse_routing: Optional[str] = None,
+        input_to_synapse_routing: str | None = None,
         delta_t: float = 1.0,
     ) -> None:
         """Initialize the ELM neuron model."""
@@ -163,27 +156,17 @@ class ELM(jit.ScriptModule):
         self.delta_t = delta_t
 
         # Derived properties
-        self.mlp_hidden_size = (
-            mlp_hidden_size if mlp_hidden_size
-            else 2 * num_memory
-        )
-        self.num_branch = (
-            self.num_input if num_branch is None
-            else num_branch
-        )
+        self.mlp_hidden_size = mlp_hidden_size if mlp_hidden_size else 2 * num_memory
+        self.num_branch = self.num_input if num_branch is None else num_branch
         self.num_mlp_input = self.num_branch + num_memory
-        self.num_synapse = (
-            num_synapse_per_branch * self.num_branch
-        )
+        self.num_synapse = num_synapse_per_branch * self.num_branch
 
         # Validate configuration
         assert (
-            self.num_synapse == num_input
-            or input_to_synapse_routing is not None
+            self.num_synapse == num_input or input_to_synapse_routing is not None
         ), "Mismatch: num_synapse != num_input without routing"
         assert (
-            self.input_to_synapse_routing
-            in PREPROCESS_CONFIGURATIONS
+            self.input_to_synapse_routing in PREPROCESS_CONFIGURATIONS
         ), f"Invalid routing: {input_to_synapse_routing}"
 
         # Initialize MLP for nonlinear integration
@@ -207,10 +190,7 @@ class ELM(jit.ScriptModule):
 
         # Initialize synapse time constants (fixed)
         tau_s = torch.full((self.num_synapse,), tau_s_value)
-        self.tau_s = nn.parameter.Parameter(
-            tau_s,
-            requires_grad=False
-        )
+        self.tau_s = nn.parameter.Parameter(tau_s, requires_grad=False)
 
         # Initialize memory time constants
         # Logspace distribution ensures diverse timescales
@@ -221,27 +201,20 @@ class ELM(jit.ScriptModule):
         )
         # Apply inverse scaled sigmoid for bounded optimization
         _proto_tau_m = inverse_scaled_sigmoid(
-            _proto_tau_m,
-            memory_tau_min,
-            memory_tau_max
+            _proto_tau_m, memory_tau_min, memory_tau_max
         )
         self._proto_tau_m = nn.parameter.Parameter(
-            _proto_tau_m,
-            requires_grad=learn_memory_tau
+            _proto_tau_m, requires_grad=learn_memory_tau
         )
 
         # Create input-to-synapse routing (if specified)
         # Stored as Parameters for JIT compatibility
-        routing_artifacts = (
-            self.create_input_to_synapse_indices()
-        )
+        routing_artifacts = self.create_input_to_synapse_indices()
         self.input_to_synapse_indices = nn.parameter.Parameter(
-            routing_artifacts[0],
-            requires_grad=False
+            routing_artifacts[0], requires_grad=False
         )
         self.valid_indices_mask = nn.parameter.Parameter(
-            routing_artifacts[1],
-            requires_grad=False
+            routing_artifacts[1], requires_grad=False
         )
 
     @property
@@ -256,9 +229,7 @@ class ELM(jit.ScriptModule):
             Tensor of shape (num_memory,) with timescales in ms
         """
         return scaled_sigmoid(
-            self._proto_tau_m,
-            self.memory_tau_min,
-            self.memory_tau_max
+            self._proto_tau_m, self.memory_tau_min, self.memory_tau_max
         )
 
     @property
@@ -272,9 +243,7 @@ class ELM(jit.ScriptModule):
         Returns:
             Tensor of shape (num_memory,) with values in (0, 1)
         """
-        return torch.exp(
-            -self.delta_t / torch.clamp(self.tau_m, min=1e-6)
-        )
+        return torch.exp(-self.delta_t / torch.clamp(self.tau_m, min=1e-6))
 
     @property
     def kappa_s(self) -> torch.Tensor:
@@ -287,9 +256,7 @@ class ELM(jit.ScriptModule):
         Returns:
             Tensor of shape (num_synapse,) with values in (0, 1)
         """
-        return torch.exp(
-            -self.delta_t / torch.clamp(self.tau_s, min=1e-6)
-        )
+        return torch.exp(-self.delta_t / torch.clamp(self.tau_s, min=1e-6))
 
     @property
     def w_s(self) -> torch.Tensor:
@@ -301,9 +268,7 @@ class ELM(jit.ScriptModule):
         """
         return torch.relu(self._proto_w_s)
 
-    def create_input_to_synapse_indices(
-        self
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def create_input_to_synapse_indices(self) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Create input-to-synapse routing indices and validity mask.
 
@@ -314,24 +279,18 @@ class ELM(jit.ScriptModule):
            excitatory/inhibitory, creates overlapping windows)
 
         Returns:
-            Tuple of (indices, mask):
+            tuple of (indices, mask):
             - indices: Tensor mapping synapses to input indices
             - mask: Binary mask indicating valid indices
         """
         if self.input_to_synapse_routing == "random_routing":
             # Randomly select num_synapse from num_input
             input_to_synapse_indices = torch.randint(
-                self.num_input,
-                (self.num_synapse,)
+                self.num_input, (self.num_synapse,)
             )
-            return (
-                input_to_synapse_indices,
-                torch.ones_like(input_to_synapse_indices)
-            )
+            return (input_to_synapse_indices, torch.ones_like(input_to_synapse_indices))
 
-        elif (
-            self.input_to_synapse_routing == "neuronio_routing"
-        ):
+        elif self.input_to_synapse_routing == "neuronio_routing":
             # Validate configuration
             assert (
                 math.ceil(self.num_input / self.num_branch)
@@ -339,37 +298,23 @@ class ELM(jit.ScriptModule):
             ), "Insufficient synapses per branch for input size"
 
             # Interleave excitatory and inhibitory inputs
-            interlocking_indices = create_interlocking_indices(
-                self.num_input
-            )
+            interlocking_indices = create_interlocking_indices(self.num_input)
 
             # Assign neighboring inputs to same branch
             # (exploits spatial locality)
-            overlapping_indices, valid_indices_mask = (
-                create_overlapping_window_indices(
-                    self.num_input,
-                    self.num_branch,
-                    self.num_synapse_per_branch
-                )
+            overlapping_indices, valid_indices_mask = create_overlapping_window_indices(
+                self.num_input, self.num_branch, self.num_synapse_per_branch
             )
 
             # Compose the two transformations
-            input_to_synapse_indices = (
-                interlocking_indices[overlapping_indices]
-            )
+            input_to_synapse_indices = interlocking_indices[overlapping_indices]
 
             return input_to_synapse_indices, valid_indices_mask
         else:
             # No routing: direct mapping (None case)
-            return (
-                torch.tensor([]),
-                torch.tensor([])
-            )
+            return (torch.tensor([]), torch.tensor([]))
 
-    def route_input_to_synapses(
-        self,
-        x: torch.Tensor
-    ) -> torch.Tensor:
+    def route_input_to_synapses(self, x: torch.Tensor) -> torch.Tensor:
         """
         Apply input-to-synapse routing if configured.
 
@@ -381,11 +326,7 @@ class ELM(jit.ScriptModule):
         """
         if self.input_to_synapse_routing is not None:
             # Select specified input indices for each synapse
-            x = torch.index_select(
-                x,
-                2,
-                self.input_to_synapse_indices
-            )
+            x = torch.index_select(x, 2, self.input_to_synapse_indices)
             # Apply validity mask (zero out invalid indices)
             x = x * self.valid_indices_mask
         return x
@@ -398,8 +339,8 @@ class ELM(jit.ScriptModule):
         m_prev: torch.Tensor,
         w_s: torch.Tensor,
         kappa_s: torch.Tensor,
-        kappa_m: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        kappa_m: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Compute ELM dynamics for a single timestep.
 
@@ -419,7 +360,7 @@ class ELM(jit.ScriptModule):
             kappa_m: Memory decay factors (num_memory,)
 
         Returns:
-            Tuple of (y_t, s_t, m_t):
+            tuple of (y_t, s_t, m_t):
             - y_t: Output (batch, num_output)
             - s_t: Updated synapse state (batch, num_synapse)
             - m_t: Updated memory state (batch, num_memory)
@@ -432,27 +373,19 @@ class ELM(jit.ScriptModule):
 
         # Reduce synapse traces to branch activations
         # Sum over synapses belonging to each branch
-        syn_input = (
-            s_t.view(batch_size, self.num_branch, -1)
-            .sum(dim=-1)
-        )
+        syn_input = s_t.view(batch_size, self.num_branch, -1).sum(dim=-1)
 
         # Compute memory update proposal via MLP
         # Input: [branch_activations, decayed_previous_memory]
         # Output: Δm_t (memory update proposal)
         delta_m_t = custom_tanh(
-            self.mlp(
-                torch.cat([syn_input, kappa_m * m_prev], dim=-1)
-            )
+            self.mlp(torch.cat([syn_input, kappa_m * m_prev], dim=-1))
         )
 
         # Update memory with bounded growth
         # m_t = forget * m_{t-1} + input_scale * update
         # where input_scale = λ * (1 - κ_m) ensures stability
-        m_t = (
-            kappa_m * m_prev
-            + self.lambda_value * (1 - kappa_m) * delta_m_t
-        )
+        m_t = kappa_m * m_prev + self.lambda_value * (1 - kappa_m) * delta_m_t
 
         # Compute output via linear readout
         y_t = self.w_y(m_t)
@@ -480,22 +413,11 @@ class ELM(jit.ScriptModule):
         kappa_s, kappa_m = self.kappa_s, self.kappa_m
 
         # Initialize states to zero
-        s_prev = torch.zeros(
-            batch_size,
-            len(kappa_s),
-            device=X.device
-        )
-        m_prev = torch.zeros(
-            batch_size,
-            len(kappa_m),
-            device=X.device
-        )
+        s_prev = torch.zeros(batch_size, len(kappa_s), device=X.device)
+        m_prev = torch.zeros(batch_size, len(kappa_m), device=X.device)
 
         # Accumulate outputs (JIT-compatible list annotation)
-        outputs = torch.jit.annotate(
-            List[torch.Tensor],
-            []
-        )
+        outputs = torch.jit.annotate(list[torch.Tensor], [])
 
         # Apply input routing once for efficiency
         inputs = self.route_input_to_synapses(X)
@@ -503,12 +425,7 @@ class ELM(jit.ScriptModule):
         # Process each timestep
         for t in range(T):
             y_t, s_prev, m_prev = self.dynamics(
-                inputs[:, t],
-                s_prev,
-                m_prev,
-                w_s,
-                kappa_s,
-                kappa_m
+                inputs[:, t], s_prev, m_prev, w_s, kappa_s, kappa_m
             )
             outputs.append(y_t)
 
@@ -517,9 +434,7 @@ class ELM(jit.ScriptModule):
 
     @jit.script_method
     def neuronio_eval_forward(
-        self,
-        X: torch.Tensor,
-        y_train_soma_scale: float = DEFAULT_Y_TRAIN_SOMA_SCALE
+        self, X: torch.Tensor, y_train_soma_scale: float = DEFAULT_Y_TRAIN_SOMA_SCALE
     ) -> torch.Tensor:
         """
         Forward pass with NeuronIO-specific postprocessing.
@@ -551,10 +466,8 @@ class ELM(jit.ScriptModule):
 
     @jit.script_method
     def neuronio_viz_forward(
-        self,
-        X: torch.Tensor,
-        y_train_soma_scale: float = DEFAULT_Y_TRAIN_SOMA_SCALE
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self, X: torch.Tensor, y_train_soma_scale: float = DEFAULT_Y_TRAIN_SOMA_SCALE
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Forward pass returning outputs and internal states.
 
@@ -565,7 +478,7 @@ class ELM(jit.ScriptModule):
             y_train_soma_scale: Soma voltage scaling factor
 
         Returns:
-            Tuple of (outputs, synapse_record, memory_record):
+            tuple of (outputs, synapse_record, memory_record):
             - outputs: (batch, time, 2) postprocessed predictions
             - synapse_record: (batch, time, num_synapse) traces
             - memory_record: (batch, time, num_memory) states
@@ -577,42 +490,20 @@ class ELM(jit.ScriptModule):
         kappa_s, kappa_m = self.kappa_s, self.kappa_m
 
         # Initialize states
-        s_prev = torch.zeros(
-            batch_size,
-            len(kappa_s),
-            device=X.device
-        )
-        m_prev = torch.zeros(
-            batch_size,
-            len(kappa_m),
-            device=X.device
-        )
+        s_prev = torch.zeros(batch_size, len(kappa_s), device=X.device)
+        m_prev = torch.zeros(batch_size, len(kappa_m), device=X.device)
 
         # Accumulate outputs and states
-        outputs = torch.jit.annotate(
-            List[torch.Tensor],
-            []
-        )
-        s_record = torch.jit.annotate(
-            List[torch.Tensor],
-            []
-        )
-        m_record = torch.jit.annotate(
-            List[torch.Tensor],
-            []
-        )
+        outputs = torch.jit.annotate(list[torch.Tensor], [])
+        s_record = torch.jit.annotate(list[torch.Tensor], [])
+        m_record = torch.jit.annotate(list[torch.Tensor], [])
 
         inputs = self.route_input_to_synapses(X)
 
         # Process each timestep, recording internal states
         for t in range(T):
             y_t, s_prev, m_prev = self.dynamics(
-                inputs[:, t],
-                s_prev,
-                m_prev,
-                w_s,
-                kappa_s,
-                kappa_m
+                inputs[:, t], s_prev, m_prev, w_s, kappa_s, kappa_m
             )
             outputs.append(y_t)
             s_record.append(s_prev)
