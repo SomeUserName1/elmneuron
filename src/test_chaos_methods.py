@@ -49,7 +49,7 @@ def compute_lyapunov_lorenz(n_steps=10000, dt=0.01, t_ons=10):
     state = np.array([1.0, 1.0, 1.0])
 
     # Initialize perturbation vectors
-    Q = np.eye(3)
+    q = np.eye(3)
     lyap_sum = np.zeros(3)
     n_accumulated = 0
 
@@ -70,11 +70,11 @@ def compute_lyapunov_lorenz(n_steps=10000, dt=0.01, t_ons=10):
         # Linearized flow: Φ = exp(J*dt) using matrix exponential
         # This is more accurate than first-order Euler approximation
         Phi = expm(J * dt)
-        Q = Phi @ Q
+        q = Phi @ q
 
         # Reorthonormalization
         if (step + 1) % t_ons == 0:
-            Q, R = np.linalg.qr(Q)
+            q, R = np.linalg.qr(q)
 
             if step > 1000:  # Warmup
                 lyap_sum += np.log(np.abs(np.diag(R)))
@@ -110,7 +110,7 @@ def compute_lyapunov_henon(n_steps=10000, t_ons=10):
     """
     state = np.array([0.1, 0.1])
 
-    Q = np.eye(2)
+    q = np.eye(2)
     lyap_sum = np.zeros(2)
     n_accumulated = 0
 
@@ -121,10 +121,10 @@ def compute_lyapunov_henon(n_steps=10000, t_ons=10):
         state = henon_map(state)
         J = henon_jacobian(state)
 
-        Q = J @ Q
+        q = J @ q
 
         if (step + 1) % t_ons == 0:
-            Q, R = np.linalg.qr(Q)
+            q, R = np.linalg.qr(q)
 
             if step > 1000:
                 lyap_sum += np.log(np.abs(np.diag(R)))
