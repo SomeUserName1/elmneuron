@@ -8,30 +8,26 @@ the two model versions.
 Run with: pytest test_elm_models.py -v
 """
 
-import pytest
-import torch
 import math
 
 # Import both versions
 import sys
 from pathlib import Path
+
+import pytest
+import torch
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.expressive_leaky_memory_neuron import (
-    ELM as ELM_v1
-)
-from src.expressive_leaky_memory_neuron_v2 import (
-    ELM as ELM_v2
-)
+from src.expressive_leaky_memory_neuron import ELM as ELM_v1
+from src.expressive_leaky_memory_neuron_v2 import ELM as ELM_v2
 
 
 # Test fixtures
 @pytest.fixture
 def device():
     """Test device (CPU or CUDA if available)."""
-    return torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu"
-    )
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 @pytest.fixture
@@ -69,6 +65,7 @@ def neuronio_config():
 # Initialization Tests
 # ====================
 
+
 class TestInitialization:
     """Test model initialization for both versions."""
 
@@ -101,10 +98,7 @@ class TestInitialization:
         assert model.kappa_s.shape == (model.num_synapse,)
 
         # Check output layer
-        assert model.w_y.weight.shape == (
-            model.num_output,
-            model.num_memory
-        )
+        assert model.w_y.weight.shape == (model.num_output, model.num_memory)
 
     def test_v2_parameter_shapes(self, simple_config):
         """Test v2 parameter shapes are correct."""
@@ -123,11 +117,9 @@ class TestInitialization:
     def test_neuronio_routing_init(self, neuronio_config):
         """Test initialization with neuronio routing."""
         # Create v1-specific config (tau_s_value)
-        config_v1 = {k: v for k, v in neuronio_config.items()
-                     if k != 'tau_b_value'}
+        config_v1 = {k: v for k, v in neuronio_config.items() if k != "tau_b_value"}
         # Create v2-specific config (tau_b_value)
-        config_v2 = {k: v for k, v in neuronio_config.items()
-                     if k != 'tau_s_value'}
+        config_v2 = {k: v for k, v in neuronio_config.items() if k != "tau_s_value"}
 
         model_v1 = ELM_v1(**config_v1)
         model_v2 = ELM_v2(**config_v2)
@@ -154,6 +146,7 @@ class TestInitialization:
 # Forward Pass Tests
 # ==================
 
+
 class TestForwardPass:
     """Test forward pass for both versions."""
 
@@ -161,59 +154,31 @@ class TestForwardPass:
         """Test v1 forward pass output shape."""
         model = ELM_v1(**simple_config).to(device)
         batch, time = 4, 50
-        X = torch.randn(
-            batch,
-            time,
-            simple_config["num_input"],
-            device=device
-        )
+        X = torch.randn(batch, time, simple_config["num_input"], device=device)
 
         Y = model(X)
 
-        assert Y.shape == (
-            batch,
-            time,
-            simple_config["num_output"]
-        )
+        assert Y.shape == (batch, time, simple_config["num_output"])
         assert not torch.isnan(Y).any()
 
     def test_v2_forward_shape(self, simple_config, device):
         """Test v2 forward pass output shape."""
         model = ELM_v2(**simple_config).to(device)
         batch, time = 4, 50
-        X = torch.randn(
-            batch,
-            time,
-            simple_config["num_input"],
-            device=device
-        )
+        X = torch.randn(batch, time, simple_config["num_input"], device=device)
 
         Y = model(X)
 
-        assert Y.shape == (
-            batch,
-            time,
-            simple_config["num_output"]
-        )
+        assert Y.shape == (batch, time, simple_config["num_output"])
         assert not torch.isnan(Y).any()
 
-    def test_v1_neuronio_forward(
-        self,
-        neuronio_config,
-        device
-    ):
+    def test_v1_neuronio_forward(self, neuronio_config, device):
         """Test v1 NeuronIO-specific forward pass."""
         # Create v1-specific config
-        config_v1 = {k: v for k, v in neuronio_config.items()
-                     if k != 'tau_b_value'}
+        config_v1 = {k: v for k, v in neuronio_config.items() if k != "tau_b_value"}
         model = ELM_v1(**config_v1).to(device)
         batch, time = 2, 100
-        X = torch.randn(
-            batch,
-            time,
-            neuronio_config["num_input"],
-            device=device
-        )
+        X = torch.randn(batch, time, neuronio_config["num_input"], device=device)
 
         Y = model.neuronio_eval_forward(X)
 
@@ -221,23 +186,13 @@ class TestForwardPass:
         # Spike predictions should be in [0, 1]
         assert (Y[..., 0] >= 0).all() and (Y[..., 0] <= 1).all()
 
-    def test_v2_neuronio_forward(
-        self,
-        neuronio_config,
-        device
-    ):
+    def test_v2_neuronio_forward(self, neuronio_config, device):
         """Test v2 NeuronIO-specific forward pass."""
         # Create v2-specific config
-        config_v2 = {k: v for k, v in neuronio_config.items()
-                     if k != 'tau_s_value'}
+        config_v2 = {k: v for k, v in neuronio_config.items() if k != "tau_s_value"}
         model = ELM_v2(**config_v2).to(device)
         batch, time = 2, 100
-        X = torch.randn(
-            batch,
-            time,
-            neuronio_config["num_input"],
-            device=device
-        )
+        X = torch.randn(batch, time, neuronio_config["num_input"], device=device)
 
         Y = model.neuronio_eval_forward(X)
 
@@ -249,60 +204,31 @@ class TestForwardPass:
         """Test v1 visualization forward pass."""
         model = ELM_v1(**simple_config).to(device)
         batch, time = 2, 20
-        X = torch.randn(
-            batch,
-            time,
-            simple_config["num_input"],
-            device=device
-        )
+        X = torch.randn(batch, time, simple_config["num_input"], device=device)
 
-        outputs, s_record, m_record = (
-            model.neuronio_viz_forward(X)
-        )
+        outputs, s_record, m_record = model.neuronio_viz_forward(X)
 
         assert outputs.shape == (batch, time, 2)
-        assert s_record.shape == (
-            batch,
-            time,
-            model.num_synapse
-        )
-        assert m_record.shape == (
-            batch,
-            time,
-            model.num_memory
-        )
+        assert s_record.shape == (batch, time, model.num_synapse)
+        assert m_record.shape == (batch, time, model.num_memory)
 
     def test_v2_viz_forward(self, simple_config, device):
         """Test v2 visualization forward pass."""
         model = ELM_v2(**simple_config).to(device)
         batch, time = 2, 20
-        X = torch.randn(
-            batch,
-            time,
-            simple_config["num_input"],
-            device=device
-        )
+        X = torch.randn(batch, time, simple_config["num_input"], device=device)
 
-        outputs, b_record, m_record = (
-            model.neuronio_viz_forward(X)
-        )
+        outputs, b_record, m_record = model.neuronio_viz_forward(X)
 
         assert outputs.shape == (batch, time, 2)
-        assert b_record.shape == (
-            batch,
-            time,
-            model.num_branch
-        )
-        assert m_record.shape == (
-            batch,
-            time,
-            model.num_memory
-        )
+        assert b_record.shape == (batch, time, model.num_branch)
+        assert m_record.shape == (batch, time, model.num_memory)
 
 
 # =============
 # Routing Tests
 # =============
+
 
 class TestRouting:
     """Test routing mechanisms."""
@@ -319,8 +245,7 @@ class TestRouting:
     def test_neuronio_routing_indices(self, neuronio_config):
         """Test neuronio routing creates valid indices."""
         # Create v1-specific config
-        config_v1 = {k: v for k, v in neuronio_config.items()
-                     if k != 'tau_b_value'}
+        config_v1 = {k: v for k, v in neuronio_config.items() if k != "tau_b_value"}
         model = ELM_v1(**config_v1)
 
         indices = model.input_to_synapse_indices
@@ -331,15 +256,10 @@ class TestRouting:
     def test_routing_maintains_shape(self, neuronio_config):
         """Test routing maintains correct tensor shapes."""
         # Create v1-specific config
-        config_v1 = {k: v for k, v in neuronio_config.items()
-                     if k != 'tau_b_value'}
+        config_v1 = {k: v for k, v in neuronio_config.items() if k != "tau_b_value"}
         model = ELM_v1(**config_v1)
         batch, time = 4, 30
-        X = torch.randn(
-            batch,
-            time,
-            neuronio_config["num_input"]
-        )
+        X = torch.randn(batch, time, neuronio_config["num_input"])
 
         routed = model.route_input_to_synapses(X)
         assert routed.shape == (batch, time, model.num_synapse)
@@ -348,6 +268,7 @@ class TestRouting:
 # ===============
 # Timescale Tests
 # ===============
+
 
 class TestTimescales:
     """Test timescale properties and bounds."""
@@ -398,6 +319,7 @@ class TestTimescales:
 # Memory Dynamics Tests
 # ====================
 
+
 class TestMemoryDynamics:
     """Test memory update dynamics."""
 
@@ -405,12 +327,7 @@ class TestMemoryDynamics:
         """Test v1 memory stays bounded over time."""
         model = ELM_v1(**simple_config).to(device)
         batch, time = 4, 200
-        X = torch.randn(
-            batch,
-            time,
-            simple_config["num_input"],
-            device=device
-        )
+        X = torch.randn(batch, time, simple_config["num_input"], device=device)
 
         _, _, m_record = model.neuronio_viz_forward(X)
 
@@ -421,12 +338,7 @@ class TestMemoryDynamics:
         """Test v2 memory stays bounded over time."""
         model = ELM_v2(**simple_config).to(device)
         batch, time = 4, 200
-        X = torch.randn(
-            batch,
-            time,
-            simple_config["num_input"],
-            device=device
-        )
+        X = torch.randn(batch, time, simple_config["num_input"], device=device)
 
         _, _, m_record = model.neuronio_viz_forward(X)
 
@@ -439,12 +351,8 @@ class TestMemoryDynamics:
 
         # Create input: first 10 timesteps with signal,
         # then 100 timesteps of zeros
-        X_signal = torch.randn(
-            1, 10, simple_config["num_input"], device=device
-        )
-        X_zero = torch.zeros(
-            1, 100, simple_config["num_input"], device=device
-        )
+        X_signal = torch.randn(1, 10, simple_config["num_input"], device=device)
+        X_zero = torch.zeros(1, 100, simple_config["num_input"], device=device)
         X_combined = torch.cat([X_signal, X_zero], dim=1)
 
         _, _, m_record = model.neuronio_viz_forward(X_combined)
@@ -463,6 +371,7 @@ class TestMemoryDynamics:
 # Comparison Tests
 # ================
 
+
 class TestV1VsV2:
     """Compare behavior between v1 and v2."""
 
@@ -474,12 +383,7 @@ class TestV1VsV2:
         torch.manual_seed(42)
         model_v2 = ELM_v2(**simple_config).to(device)
 
-        X = torch.randn(
-            2,
-            20,
-            simple_config["num_input"],
-            device=device
-        )
+        X = torch.randn(2, 20, simple_config["num_input"], device=device)
 
         Y_v1 = model_v1(X)
         Y_v2 = model_v2(X)
@@ -490,23 +394,15 @@ class TestV1VsV2:
     def test_v2_parameter_efficiency(self, neuronio_config):
         """Test v2 parameter efficiency compared to v1."""
         # Create v1-specific config
-        config_v1 = {k: v for k, v in neuronio_config.items()
-                     if k != 'tau_b_value'}
+        config_v1 = {k: v for k, v in neuronio_config.items() if k != "tau_b_value"}
         # Create v2-specific config
-        config_v2 = {k: v for k, v in neuronio_config.items()
-                     if k != 'tau_s_value'}
+        config_v2 = {k: v for k, v in neuronio_config.items() if k != "tau_s_value"}
 
         model_v1 = ELM_v1(**config_v1)
         model_v2 = ELM_v2(**config_v2)
 
-        params_v1 = sum(
-            p.numel() for p in model_v1.parameters()
-            if p.requires_grad
-        )
-        params_v2 = sum(
-            p.numel() for p in model_v2.parameters()
-            if p.requires_grad
-        )
+        params_v1 = sum(p.numel() for p in model_v1.parameters() if p.requires_grad)
+        params_v2 = sum(p.numel() for p in model_v2.parameters() if p.requires_grad)
 
         # With neuronio_routing and same num_synapse,
         # parameter counts are similar (dominated by MLP/output)
@@ -530,6 +426,7 @@ class TestV1VsV2:
 # Edge Case Tests
 # ==============
 
+
 class TestEdgeCases:
     """Test edge cases and error conditions."""
 
@@ -537,10 +434,7 @@ class TestEdgeCases:
         """Test forward pass with single timestep."""
         model = ELM_v1(**simple_config).to(device)
         X = torch.randn(
-            2,
-            1,  # Single timestep
-            simple_config["num_input"],
-            device=device
+            2, 1, simple_config["num_input"], device=device  # Single timestep
         )
 
         Y = model(X)
@@ -550,10 +444,7 @@ class TestEdgeCases:
         """Test forward pass with large batch size."""
         model = ELM_v1(**simple_config).to(device)
         X = torch.randn(
-            64,  # Large batch
-            10,
-            simple_config["num_input"],
-            device=device
+            64, 10, simple_config["num_input"], device=device  # Large batch
         )
 
         Y = model(X)
@@ -563,10 +454,7 @@ class TestEdgeCases:
         """Test forward pass with long sequence."""
         model = ELM_v1(**simple_config).to(device)
         X = torch.randn(
-            2,
-            500,  # Long sequence
-            simple_config["num_input"],
-            device=device
+            2, 500, simple_config["num_input"], device=device  # Long sequence
         )
 
         Y = model(X)
@@ -577,11 +465,7 @@ class TestEdgeCases:
         """Test gradients flow properly through model."""
         model = ELM_v1(**simple_config).to(device)
         X = torch.randn(
-            2,
-            10,
-            simple_config["num_input"],
-            device=device,
-            requires_grad=True
+            2, 10, simple_config["num_input"], device=device, requires_grad=True
         )
 
         Y = model(X)
@@ -599,7 +483,7 @@ class TestEdgeCases:
                 num_input=100,
                 num_output=2,
                 num_memory=10,
-                input_to_synapse_routing="invalid_routing"
+                input_to_synapse_routing="invalid_routing",
             )
 
 
@@ -607,29 +491,17 @@ class TestEdgeCases:
 # Integration Tests
 # ==================
 
+
 class TestIntegration:
     """Integration tests with realistic scenarios."""
 
     def test_training_step(self, simple_config, device):
         """Test a complete training step."""
         model = ELM_v1(**simple_config).to(device)
-        optimizer = torch.optim.Adam(
-            model.parameters(),
-            lr=1e-3
-        )
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-        X = torch.randn(
-            4,
-            20,
-            simple_config["num_input"],
-            device=device
-        )
-        target = torch.randn(
-            4,
-            20,
-            simple_config["num_output"],
-            device=device
-        )
+        X = torch.randn(4, 20, simple_config["num_input"], device=device)
+        target = torch.randn(4, 20, simple_config["num_output"], device=device)
 
         # Forward
         Y = model(X)

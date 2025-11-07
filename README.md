@@ -44,7 +44,7 @@ Running the NeuronIO related code requires downloading the dataset first (~115GB
 
 - Download Train Data: [single-neurons-as-deep-nets-nmda-train-data](https://www.kaggle.com/datasets/selfishgene/single-neurons-as-deep-nets-nmda-train-data)
 - Download Test Data (Data_test): [single-neurons-as-deep-nets-nmda-test-data](https://www.kaggle.com/datasets/selfishgene/single-neurons-as-deep-nets-nmda-test-data)
-- For more information, please checkout the following repository: [neuron_as_deep_net](https://github.com/SelfishGene/neuron_as_deep_net)
+- For the original dataset source and reference implementation, see: [neuron_as_deep_net](https://github.com/SelfishGene/neuron_as_deep_net)
 
 Running the SHD related code is possible without seperately downloading the dataset (~0.5GB).
 

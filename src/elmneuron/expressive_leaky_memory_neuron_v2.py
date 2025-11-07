@@ -188,12 +188,12 @@ class ELM(jit.ScriptModule):
         self.num_synapse = num_synapse_per_branch * self.num_branch
 
         # Validate configuration
-        assert self.num_synapse == num_input or input_to_synapse_routing is not None, (
-            "Mismatch: num_synapse != num_input without routing"
-        )
-        assert self.input_to_synapse_routing in PREPROCESS_CONFIGURATIONS, (
-            f"Invalid routing: {input_to_synapse_routing}"
-        )
+        assert (
+            self.num_synapse == num_input or input_to_synapse_routing is not None
+        ), "Mismatch: num_synapse != num_input without routing"
+        assert (
+            self.input_to_synapse_routing in PREPROCESS_CONFIGURATIONS
+        ), f"Invalid routing: {input_to_synapse_routing}"
 
         # Initialize MLP for nonlinear integration
         # Maps [branch_activations, previous_memory] to memory_update

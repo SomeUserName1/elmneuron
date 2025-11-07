@@ -10,8 +10,8 @@ For development or to get the latest code:
 
 ```bash
 # Clone the repository
-git clone https://github.com/selfishgene/neuron_as_deep_net.git
-cd neuron_as_deep_net
+git clone git@github.com:AaronSpieler/elmneuron.git
+cd elmneuron
 
 # Install in editable mode with development dependencies
 pip install -e ".[dev]"
@@ -26,8 +26,8 @@ For regular installation from source:
 
 ```bash
 # Clone the repository
-git clone https://github.com/selfishgene/neuron_as_deep_net.git
-cd neuron_as_deep_net
+git clone git@github.com:AaronSpieler/elmneuron.git
+cd elmneuron
 
 # Install the package
 pip install .
