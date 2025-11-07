@@ -6,9 +6,42 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repository implements the Expressive Leaky Memory (ELM) neuron, a biologically-inspired phenomenological model of cortical neurons that efficiently captures sophisticated neuronal computations. The implementation features two variants: ELM v1 and Branch-ELM v2, with v2 achieving ~7× parameter reduction through hierarchical dendritic processing.
 
+## Code Quality and Formatting
+
+This project uses pre-commit hooks for code quality:
+
+```bash
+# Install pre-commit hooks
+pip install pre-commit
+pre-commit install
+
+# Run manually
+pre-commit run --all-files
+```
+
+**Standards enforced:**
+- **black**: Code formatting (line length, style)
+- **isort**: Import sorting (black-compatible profile)
+- **pre-commit-hooks**: AST validation, YAML checks, trailing whitespace, end-of-file fixers
+
+When modifying Python code, ensure it passes black and isort before committing.
+
 ## Environment Setup
 
-### Creating the environment
+This project is a pip-installable package. Choose one of the following installation methods:
+
+### Method 1: Install from Source (Recommended for Development)
+
+```bash
+# Install in editable mode with all development tools
+pip install -e ".[dev]"
+
+# Or install with specific optional dependencies
+pip install -e ".[wandb]"  # For experiment tracking
+pip install -e ".[all]"    # All optional dependencies
+```
+
+### Method 2: Using Conda Environment
 
 ```bash
 # Create conda environment (CPU or GPU version available)
@@ -18,15 +51,26 @@ conda env create -f elm_env_gpu.yml
 
 # Activate environment
 conda activate elm_env
+
+# Then install the package
+pip install -e .
 ```
 
-### Alternative: Using requirements.txt
+### Method 3: Build and Install Wheel
 
 ```bash
-pip install -r requirements.txt
+# Build the wheel
+python -m build --wheel
+
+# Install the wheel
+pip install dist/elmneuron-0.1.0-py3-none-any.whl
 ```
 
-**Dependencies**: PyTorch 2.9.0, NumPy, h5py, matplotlib, seaborn, sklearn, tqdm, wandb
+**Core Dependencies**: PyTorch >=2.0.0, NumPy, h5py, matplotlib, seaborn, scikit-learn, tqdm
+
+**Optional Dependencies**: wandb (experiment tracking), pytest/black/isort (development)
+
+See `INSTALL.md` for detailed installation instructions.
 
 ## Running Tests
 
@@ -204,18 +248,23 @@ model = ELM_v1(
 
 ## Code Organization
 
+The package is structured as an installable Python package named `elmneuron`:
+
 ```
-src/
+src/elmneuron/                              # Main package (installed as 'elmneuron')
+├── __init__.py
 ├── expressive_leaky_memory_neuron.py       # ELM v1 implementation
 ├── expressive_leaky_memory_neuron_v2.py    # Branch-ELM v2 implementation
 ├── modeling_utils.py                       # Shared utilities (MLP, activations, routing)
 ├── neuronio/                               # NeuronIO dataset utilities
+│   ├── __init__.py
 │   ├── neuronio_data_loader.py
 │   ├── neuronio_data_utils.py
 │   ├── neuronio_train_utils.py
 │   ├── neuronio_eval_utils.py
 │   └── neuronio_viz_utils.py
 └── shd/                                    # SHD dataset utilities
+    ├── __init__.py
     ├── shd_data_loader.py
     └── shd_download_utils.py
 
@@ -231,6 +280,16 @@ tests/
 models/                                      # Pre-trained models (various sizes)
 ```
 
+**Import paths:**
+```python
+# Correct imports (package is 'elmneuron', not 'src')
+from elmneuron.expressive_leaky_memory_neuron import ELM as ELM_v1
+from elmneuron.expressive_leaky_memory_neuron_v2 import ELM as ELM_v2
+from elmneuron.modeling_utils import MLP, create_interlocking_indices
+from elmneuron.neuronio.neuronio_data_loader import NeuronIODataset
+from elmneuron.shd.shd_data_loader import SHDDataset
+```
+
 ## Common Development Patterns
 
 ### Creating a Model Instance
@@ -239,11 +298,11 @@ Always check which version you're using and provide appropriate parameters:
 
 ```python
 # v1: uses tau_s_value
-from src.expressive_leaky_memory_neuron import ELM
+from elmneuron.expressive_leaky_memory_neuron import ELM
 model_v1 = ELM(num_input=128, num_output=2, num_memory=20, tau_s_value=5.0)
 
 # v2: uses tau_b_value, w_s must be learnable
-from src.expressive_leaky_memory_neuron_v2 import ELM
+from elmneuron.expressive_leaky_memory_neuron_v2 import ELM
 model_v2 = ELM(num_input=128, num_output=2, num_memory=20, tau_b_value=5.0)
 ```
 
@@ -289,6 +348,70 @@ Load models with:
 model.load_state_dict(torch.load("models/elm_dm15.pt"))
 ```
 
+## Git Workflow
+
+**Main branch:** `main`
+
+**Branch naming convention:**
+- Feature branches: `feat/feature-name`
+- Bug fixes: `fix/bug-description`
+- Experiments: `exp/experiment-name`
+
+**Commit practices:**
+- Write clear, descriptive commit messages
+- Reference issue numbers when applicable
+- Ensure all tests pass before committing
+- Pre-commit hooks will automatically format code
+
 ## Paper Reference
 
 When making architectural changes, refer to the detailed implementation summary in README.md (lines 66-393) which provides comprehensive documentation of the mathematical formulations, design decisions, and biological interpretations.
+
+## Package Building and Distribution
+
+This repository is configured as a modern Python package using `pyproject.toml`:
+
+**Building the package:**
+```bash
+# Build both wheel and source distribution
+python -m build
+
+# Build only wheel (faster)
+python -m build --wheel
+
+# Output: dist/elmneuron-0.1.0-py3-none-any.whl
+```
+
+**Package structure:**
+- `pyproject.toml`: Modern package configuration (PEP 518, 621)
+- `src/elmneuron/`: Source code in src-layout (recommended)
+- `MANIFEST.in`: Includes documentation, models, and metadata
+- `src/elmneuron/py.typed`: PEP 561 type hint marker
+
+**Version bumping:**
+Update version in `pyproject.toml` and `src/elmneuron/__init__.py`
+
+**Publishing to PyPI** (when ready):
+```bash
+python -m build
+python -m twine upload dist/*
+```
+
+## Additional Notes
+
+**Working with internal model states:**
+Both ELM versions provide specialized methods for accessing internal states:
+- Use `neuronio_viz_forward()` instead of `forward()` when you need to inspect intermediate activations
+- This returns `(outputs, states, memory)` where states are synapse/branch activations and memory is the memory unit activations
+- Essential for debugging, visualization, and analysis tasks
+
+**Modifying JIT-compiled code:**
+If you encounter errors when modifying model code, check:
+1. All variables have type annotations
+2. No f-strings in JIT contexts (use `"string {}".format()` instead)
+3. List accumulation uses `torch.jit.annotate(List[torch.Tensor], [])`
+4. No dict comprehensions or unsupported Python constructs
+
+**Import paths:**
+Always use `from elmneuron import ...` not `from src.elmneuron import ...`
+The package name is `elmneuron` when installed.

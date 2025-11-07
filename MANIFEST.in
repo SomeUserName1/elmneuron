@@ -1,0 +1,27 @@
+# Include important documentation and metadata files
+include README.md
+include LICENSE
+include CLAUDE.md
+include requirements.txt
+include elm_env.yml
+include elm_env_gpu.yml
+include .pre-commit-config.yaml
+
+# Include model images
+include *.png
+
+# Include model files (pre-trained weights)
+recursive-include models *.pt
+recursive-include models *.md
+
+# Exclude certain files and directories
+exclude .gitignore
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * .DS_Store
+recursive-exclude .git *
+recursive-exclude .pytest_cache *
+recursive-exclude tests *
+recursive-exclude notebooks *
+recursive-exclude wandb *
+recursive-exclude shd_data *

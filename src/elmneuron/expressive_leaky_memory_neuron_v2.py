@@ -188,12 +188,12 @@ class ELM(jit.ScriptModule):
         self.num_synapse = num_synapse_per_branch * self.num_branch
 
         # Validate configuration
-        assert (
-            self.num_synapse == num_input or input_to_synapse_routing is not None
-        ), "Mismatch: num_synapse != num_input without routing"
-        assert (
-            self.input_to_synapse_routing in PREPROCESS_CONFIGURATIONS
-        ), f"Invalid routing: {input_to_synapse_routing}"
+        assert self.num_synapse == num_input or input_to_synapse_routing is not None, (
+            "Mismatch: num_synapse != num_input without routing"
+        )
+        assert self.input_to_synapse_routing in PREPROCESS_CONFIGURATIONS, (
+            f"Invalid routing: {input_to_synapse_routing}"
+        )
 
         # Initialize MLP for nonlinear integration
         # Maps [branch_activations, previous_memory] to memory_update
@@ -434,16 +434,17 @@ class ELM(jit.ScriptModule):
         # b_t = κ_b * b_{t-1} + branch_input
         b_t = kappa_b * b_prev + b_inp
 
+        decayed_m_prev = kappa_m * m_prev
         # Compute memory update proposal via MLP
         # Input: [branch_activations, decayed_previous_memory]
         # Output: Δm_t (memory update proposal)
-        delta_m_t = custom_tanh(self.mlp(torch.cat([b_t, kappa_m * m_prev], dim=-1)))
+        delta_m_t = custom_tanh(self.mlp(torch.cat([b_t, decayed_m_prev], dim=-1)))
 
         # Update memory with modified equation (v2 improvement)
         # m_t = forget * m_{t-1} + input_scale * update
         # where input_scale = (1 - κ_λ) ensures stability
         # This replaces v1's λ * (1 - κ_m) formulation
-        m_t = kappa_m * m_prev + (1 - kappa_lambda) * delta_m_t
+        m_t = decayed_m_prev + (1 - kappa_lambda) * delta_m_t
 
         # Compute output via linear readout
         y_t = self.w_y(m_t)
