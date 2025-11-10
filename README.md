@@ -3,7 +3,7 @@
 This repository features a minimal implementation of the (Branch) Expressive Leaky Memory neuron in PyTorch.
 Notebooks to train and evaluate on NeuronIO are provided, as well as pre-trained models of various sizes.
 
-![The ELM neuron](./elm_neuron_sketch.png)
+![The ELM neuron](./elm_neuron_sketch_v2.png)
 
 ## Installation
 

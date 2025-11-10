@@ -11,12 +11,14 @@ from elmneuron.shd.shd_data_loader import (
     random_val_split_SHD_data,
     visualize_training_batch,
 )
+from elmneuron.shd.shd_datamodule import SHDDataModule
 from elmneuron.shd.shd_download_utils import get_shd_dataset
 
 __all__ = [
     # Datasets
     "SHD",
     "SHDAdding",
+    "SHDDataModule",
     # Utilities
     "random_val_split_SHD_data",
     "visualize_training_batch",

@@ -1,6 +1,15 @@
 # Installation Guide
 
-This guide explains how to install the `elmneuron` package.
+This guide explains how to install the `elmneuron` package with PyTorch Lightning support.
+
+## Quick Start
+
+```bash
+# Clone and install in editable mode with all dependencies
+git clone git@github.com:AaronSpieler/elmneuron.git
+cd elmneuron
+pip install -e ".[all]"
+```
 
 ## Installation Methods
 
@@ -56,13 +65,25 @@ Then install the package in editable mode:
 pip install -e .
 ```
 
+## Core Dependencies
+
+The package requires:
+- **PyTorch >= 2.0.0**: Deep learning framework
+- **PyTorch Lightning >= 2.0.0**: Training framework
+- **NumPy**: Numerical computing
+- **h5py**: HDF5 file handling
+- **torchvision, torchtext**: Dataset utilities
+- **matplotlib, seaborn**: Visualization
+- **scikit-learn**: Metrics and utilities
+- **tqdm**: Progress bars
+
 ## Optional Dependencies
 
 The package supports several optional dependency groups:
 
-- `dev`: Development tools (pytest, black, isort, pre-commit)
+- `dev`: Development tools (pytest, black, isort, pre-commit, flake8)
 - `wandb`: Weights & Biases integration for experiment tracking
-- `gpu`: GPU-enabled PyTorch (requires manual installation)
+- `tensorboard`: TensorBoard logging
 - `all`: All optional dependencies (except GPU)
 
 Install with:
@@ -88,17 +109,31 @@ Test your installation:
 
 ```python
 import elmneuron
-from elmneuron import ELM_v1, ELM_v2
+from elmneuron.expressive_leaky_memory_neuron_v2 import ELM
+from elmneuron.tasks.classification_task import ClassificationTask
+from elmneuron.vision.vision_datamodule import MNISTDataModule
+from lightning.pytorch import Trainer
 
 print(f"elmneuron version: {elmneuron.__version__}")
 
 # Create a simple model
-model = ELM_v2(
-    num_input=128,
-    num_output=2,
-    num_memory=15,
+model = ELM(
+    num_input=784,
+    num_output=10,
+    num_memory=50,
+    lambda_value=5.0,
 )
-print(f"Model created successfully with {sum(p.numel() for p in model.parameters())} parameters")
+print(f"✓ Model created with {sum(p.numel() for p in model.parameters()):,} parameters")
+
+# Test Lightning integration
+task = ClassificationTask(model=model, learning_rate=1e-3)
+print(f"✓ Lightning task module created")
+
+# Test DataModule
+datamodule = MNISTDataModule(data_dir="./data", batch_size=64)
+print(f"✓ DataModule created")
+
+print("\n✓ Installation verified successfully!")
 ```
 
 ## Development Installation
