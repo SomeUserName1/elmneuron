@@ -196,7 +196,21 @@ pip install -e ".[wandb]"  # For experiment tracking
 pip install -e ".[all]"    # All optional dependencies
 ```
 
-### Method 2: Using Conda Environment
+### Method 2: Using venv and requirements.txt
+
+```bash
+# Create and activate virtual environment
+python -m venv elm_env
+source elm_env/bin/activate  # On Windows: elm_env\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Install the package (editable mode)
+pip install -e .
+```
+
+### Method 3: Using Conda Environment
 
 ```bash
 # Create conda environment (CPU or GPU version available)
@@ -211,14 +225,20 @@ conda activate elm_env
 pip install -e .
 ```
 
-### Method 3: Build and Install Wheel
+### Method 4: Build and Install Wheel
 
 ```bash
+# Install build tools if not already installed
+pip install build
+
 # Build the wheel
 python -m build --wheel
 
 # Install the wheel
 pip install dist/elmneuron-0.1.0-py3-none-any.whl
+
+# Or build both wheel and source distribution
+python -m build
 ```
 
 **Core Dependencies**: PyTorch >=2.0.0, NumPy, h5py, matplotlib, seaborn, scikit-learn, tqdm

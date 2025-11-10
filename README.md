@@ -7,8 +7,58 @@ Notebooks to train and evaluate on NeuronIO are provided, as well as pre-trained
 
 ## Installation
 
-1. Create the conda environment with `conda env create -f elm_env.yml`
-2. Once installed, activate the environment with `conda activate elm_env`
+Choose one of the following installation methods:
+
+### Quick Start (Editable Install)
+
+```bash
+# Clone the repository
+git clone git@github.com:AaronSpieler/elmneuron.git
+cd elmneuron
+
+# Install in editable mode with all dependencies
+pip install -e ".[all]"
+```
+
+### Method 1: Using venv and requirements.txt
+
+```bash
+# Create and activate virtual environment
+python -m venv elm_env
+source elm_env/bin/activate  # On Windows: elm_env\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Install the package (editable mode)
+pip install -e .
+```
+
+### Method 2: Build and install from wheel
+
+```bash
+# Install build tools
+pip install build
+
+# Build the wheel
+python -m build --wheel
+
+# Install the built wheel
+pip install dist/elmneuron-0.1.0-py3-none-any.whl
+```
+
+### Method 3: Using Conda environment
+
+```bash
+# Create conda environment
+conda env create -f elm_env.yml  # or elm_env_gpu.yml for GPU support
+conda activate elm_env
+
+# Install the package
+pip install -e .
+```
+
+For detailed installation instructions, including optional dependencies and troubleshooting, see [INSTALL.md](INSTALL.md).
 
 ## Models
 

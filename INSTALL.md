@@ -45,7 +45,56 @@ pip install .
 pip install ".[wandb]"  # For Weights & Biases logging
 ```
 
-### Method 3: Using Conda environment
+### Method 3: Build and install from wheel
+
+Build a distributable wheel package:
+
+```bash
+# Install build tools if not already installed
+pip install build
+
+# Build the wheel (creates dist/elmneuron-0.1.0-py3-none-any.whl)
+python -m build --wheel
+
+# Install the wheel
+pip install dist/elmneuron-0.1.0-py3-none-any.whl
+
+# Or install with optional dependencies
+pip install "dist/elmneuron-0.1.0-py3-none-any.whl[wandb]"
+```
+
+To build both wheel and source distribution:
+
+```bash
+python -m build
+```
+
+### Method 4: Using venv with requirements.txt
+
+Create a virtual environment and install from requirements:
+
+```bash
+# Create virtual environment
+python -m venv elm_env
+
+# Activate the environment
+# On Linux/macOS:
+source elm_env/bin/activate
+# On Windows:
+# elm_env\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Install the package in editable mode
+pip install -e .
+
+# Or install from wheel after building
+python -m build --wheel
+pip install dist/elmneuron-0.1.0-py3-none-any.whl
+```
+
+### Method 5: Using Conda environment
 
 Use the provided conda environment files:
 
