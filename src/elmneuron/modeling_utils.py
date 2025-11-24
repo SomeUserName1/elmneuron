@@ -8,7 +8,9 @@ def scaled_sigmoid(x, lower_bound: float, upper_bound: float):
     return (upper_bound - lower_bound) * torch.sigmoid(x) + lower_bound
 
 
-def inverse_scaled_sigmoid(x, lower_bound: float, upper_bound: float):
+def inverse_scaled_sigmoid(
+    x: torch.Tensor, lower_bound: float, upper_bound: float
+) -> torch.Tensor:
     x = torch.clamp(x, lower_bound + 1e-6, upper_bound - 1e-6)
     return torch.log((x - lower_bound) / (upper_bound - x))
 
