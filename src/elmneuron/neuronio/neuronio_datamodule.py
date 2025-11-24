@@ -7,7 +7,7 @@ NeuronIO biophysical neuron dataset, with integrated routing transforms.
 
 from typing import Any, Literal
 
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 from torch.utils.data import DataLoader
 
 from ..transforms import NeuronIORouting, RoutingTransform
@@ -23,6 +23,22 @@ from .neuronio_data_utils import (
     create_neuronio_input_type,
     get_data_files_from_folder,
 )
+
+
+class _RoutingCollate:
+    """Collate function that applies routing transform."""
+
+    def __init__(self, routing: RoutingTransform | None):
+        self.routing = routing
+
+    def __call__(self, batch):
+        X_batch, (y_spike_batch, y_soma_batch) = batch
+
+        # Apply routing transform to input data
+        if self.routing is not None:
+            X_batch = self.routing(X_batch)
+
+        return X_batch, (y_spike_batch, y_soma_batch)
 
 
 class NeuronIODataModule(pl.LightningDataModule):
@@ -44,8 +60,8 @@ class NeuronIODataModule(pl.LightningDataModule):
         input_window_size: int = 500,
         file_load_fraction: float = 0.3,
         ignore_time_from_start: int = 500,
-        num_workers: int = 5,
-        num_prefetch_batch: int = 50,
+        num_workers: int = 3,
+        num_prefetch_batch: int = 5,
         y_soma_threshold: float = DEFAULT_Y_SOMA_THRESHOLD,
         y_train_soma_bias: float = DEFAULT_Y_TRAIN_SOMA_BIAS,
         y_train_soma_scale: float = DEFAULT_Y_TRAIN_SOMA_SCALE,
@@ -116,21 +132,16 @@ class NeuronIODataModule(pl.LightningDataModule):
         self.verbose = verbose
 
         # Create synapse types (excitatory/inhibitory markers)
+        # These are always in original dimension (1278) - routing is applied after
         self.synapse_types = create_neuronio_input_type()
-
-        # Apply routing to synapse types if needed
-        if self.routing is not None:
-            import torch
-
-            synapse_types_tensor = torch.tensor(self.synapse_types, dtype=torch.float32)
-            self.routed_synapse_types = self.routing(synapse_types_tensor).numpy()
-        else:
-            self.routed_synapse_types = self.synapse_types
 
         # Datasets (initialized in setup)
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
+
+        # Create collate function for routing
+        self._collate_fn = _RoutingCollate(self.routing)
 
     def prepare_data(self) -> None:
         """
@@ -176,16 +187,16 @@ class NeuronIODataModule(pl.LightningDataModule):
         # Setup for training/validation
         if stage == "fit" or stage is None:
             if self.train_dataset is None:
+                if self.verbose:
+                    print("  Creating train NeuronIO dataset...", flush=True)
                 self.train_dataset = NeuronIO(
                     batches_per_epoch=self.train_batches_per_epoch,
                     file_paths=self.train_files,
-                    synapse_types=self.routed_synapse_types,
+                    synapse_types=self.synapse_types,
                     batch_size=self.batch_size,
                     input_window_size=self.input_window_size,
                     file_load_fraction=self.file_load_fraction,
                     ignore_time_from_start=self.ignore_time_from_start,
-                    num_workers=self.num_workers,
-                    num_prefetch_batch=self.num_prefetch_batch,
                     y_soma_threshold=self.y_soma_threshold,
                     y_train_soma_bias=self.y_train_soma_bias,
                     y_train_soma_scale=self.y_train_soma_scale,
@@ -196,18 +207,20 @@ class NeuronIODataModule(pl.LightningDataModule):
                     seed=self.seed,
                     verbose=self.verbose,
                 )
+                if self.verbose:
+                    print("  Train dataset created successfully", flush=True)
 
             if self.val_dataset is None and self.val_files is not None:
+                if self.verbose:
+                    print("  Creating val NeuronIO dataset...", flush=True)
                 self.val_dataset = NeuronIO(
                     batches_per_epoch=self.val_batches_per_epoch,
                     file_paths=self.val_files,
-                    synapse_types=self.routed_synapse_types,
+                    synapse_types=self.synapse_types,
                     batch_size=self.batch_size,
                     input_window_size=self.input_window_size,
                     file_load_fraction=self.file_load_fraction,
                     ignore_time_from_start=self.ignore_time_from_start,
-                    num_workers=self.num_workers,
-                    num_prefetch_batch=self.num_prefetch_batch,
                     y_soma_threshold=self.y_soma_threshold,
                     y_train_soma_bias=self.y_train_soma_bias,
                     y_train_soma_scale=self.y_train_soma_scale,
@@ -218,6 +231,8 @@ class NeuronIODataModule(pl.LightningDataModule):
                     seed=self.seed + 1,  # Different seed for validation
                     verbose=self.verbose,
                 )
+                if self.verbose:
+                    print("  Val dataset created successfully", flush=True)
 
         # Setup for testing
         if stage == "test" or stage is None:
@@ -225,13 +240,11 @@ class NeuronIODataModule(pl.LightningDataModule):
                 self.test_dataset = NeuronIO(
                     batches_per_epoch=self.test_batches_per_epoch,
                     file_paths=self.test_files,
-                    synapse_types=self.routed_synapse_types,
+                    synapse_types=self.synapse_types,
                     batch_size=self.batch_size,
                     input_window_size=self.input_window_size,
                     file_load_fraction=self.file_load_fraction,
                     ignore_time_from_start=self.ignore_time_from_start,
-                    num_workers=self.num_workers,
-                    num_prefetch_batch=self.num_prefetch_batch,
                     y_soma_threshold=self.y_soma_threshold,
                     y_train_soma_bias=self.y_train_soma_bias,
                     y_train_soma_scale=self.y_train_soma_scale,
@@ -246,10 +259,15 @@ class NeuronIODataModule(pl.LightningDataModule):
     def train_dataloader(self) -> DataLoader:
         """Return training dataloader."""
         # NeuronIO handles batching internally, so we don't use DataLoader batching
+        # DataLoader handles multiprocessing, prefetching, and pin_memory
         return DataLoader(
             self.train_dataset,
             batch_size=None,  # Already batched by NeuronIO
-            num_workers=0,  # NeuronIO handles multiprocessing
+            num_workers=self.num_workers,
+            pin_memory=True,
+            prefetch_factor=self.num_prefetch_batch // max(1, self.num_workers),
+            persistent_workers=self.num_workers > 0,
+            collate_fn=self._collate_fn,
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -259,7 +277,11 @@ class NeuronIODataModule(pl.LightningDataModule):
         return DataLoader(
             self.val_dataset,
             batch_size=None,
-            num_workers=0,
+            num_workers=self.num_workers,
+            pin_memory=True,
+            prefetch_factor=self.num_prefetch_batch // max(1, self.num_workers),
+            persistent_workers=self.num_workers > 0,
+            collate_fn=self._collate_fn,
         )
 
     def test_dataloader(self) -> DataLoader:
@@ -269,7 +291,11 @@ class NeuronIODataModule(pl.LightningDataModule):
         return DataLoader(
             self.test_dataset,
             batch_size=None,
-            num_workers=0,
+            num_workers=self.num_workers,
+            pin_memory=True,
+            prefetch_factor=self.num_prefetch_batch // max(1, self.num_workers),
+            persistent_workers=self.num_workers > 0,
+            collate_fn=self._collate_fn,
         )
 
     def teardown(self, stage: str | None = None) -> None:

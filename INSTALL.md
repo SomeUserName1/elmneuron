@@ -121,7 +121,9 @@ The package requires:
 - **PyTorch Lightning >= 2.0.0**: Training framework
 - **NumPy**: Numerical computing
 - **h5py**: HDF5 file handling
-- **torchvision, torchtext**: Dataset utilities
+- **torchvision**: Vision dataset utilities
+- **datasets**: Hugging Face datasets (for WikiText)
+- **spacy**: Tokenization (for text processing)
 - **matplotlib, seaborn**: Visualization
 - **scikit-learn**: Metrics and utilities
 - **tqdm**: Progress bars

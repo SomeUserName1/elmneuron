@@ -9,7 +9,7 @@ images to sequences using various strategies.
 from pathlib import Path
 from typing import Callable, Literal
 
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 import torch
 from torch.utils.data import DataLoader, Dataset, random_split
 

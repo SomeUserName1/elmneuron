@@ -27,8 +27,8 @@ def test_text_imports():
         return True
     except ImportError as e:
         print(f"✗ Import failed: {e}")
-        print("  Note: Text DataModules require torchtext")
-        print("  Install with: pip install elmneuron[text]")
+        print("  Note: Text DataModules require datasets and spacy")
+        print("  Install with: pip install datasets spacy")
         return False
 
 
@@ -183,17 +183,17 @@ def test_wikitext2_setup():
     """Test WikiText-2 DataModule setup (requires download)."""
     print("\nTesting WikiText-2 DataModule setup (may download data)...")
 
-    # Check if torchtext is available
+    # Check if datasets is available
     try:
-        from torchtext.datasets import WikiText2
+        from datasets import load_dataset
 
-        torchtext_available = True
+        datasets_available = True
     except ImportError:
-        torchtext_available = False
+        datasets_available = False
 
-    if not torchtext_available:
-        print("✗ Skipping: torchtext not installed")
-        print("  Install with: pip install torchtext")
+    if not datasets_available:
+        print("✗ Skipping: datasets not installed")
+        print("  Install with: pip install datasets")
         return False
 
     try:
@@ -371,7 +371,7 @@ if __name__ == "__main__":
         results.append(("Embedding Dimension", test_embedding_dimension()))
     else:
         print("\n⚠ Skipping remaining tests due to import failure")
-        print("  Install torchtext with: pip install torchtext")
+        print("  Install dependencies with: pip install datasets spacy")
 
     # Summary
     print("\n" + "=" * 60)
@@ -389,7 +389,7 @@ if __name__ == "__main__":
     print(f"Results: {passed}/{total} tests passed")
     print("=" * 60)
 
-    # Check if only WikiText-2 setup failed due to missing torchtext
+    # Check if only WikiText-2 setup failed due to missing datasets
     wikitext_only_failure = passed == total - 1 and any(
         name == "WikiText-2 Setup" and not result for name, result in results
     )
@@ -398,11 +398,11 @@ if __name__ == "__main__":
         print("✓ All tests passed!")
         sys.exit(0)
     elif wikitext_only_failure:
-        print("✓ All core tests passed! (WikiText-2 requires optional torchtext)")
-        print("  Install torchtext for full WikiText support: pip install torchtext")
+        print("✓ All core tests passed! (WikiText-2 requires optional datasets)")
+        print("  Install datasets for full WikiText support: pip install datasets")
         sys.exit(0)
     else:
         print(f"✗ {total - passed} test(s) failed")
         if not results[0][1]:
-            print("  Hint: Install text dependencies with: pip install elmneuron[text]")
+            print("  Hint: Install text dependencies with: pip install datasets spacy")
         sys.exit(1)

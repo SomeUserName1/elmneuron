@@ -26,7 +26,10 @@ from elmneuron.callbacks import (
     StateRecorderCallback,
 )
 from elmneuron.expressive_leaky_memory_neuron_v2 import ELM
-from elmneuron.neuronio.neuronio_data_utils import NEURONIO_DATA_DIM, NEURONIO_LABEL_DIM
+from elmneuron.neuronio.neuronio_data_utils import (
+    NEURONIO_DATA_DIM,
+    NEURONIO_LABEL_DIM,
+)
 from elmneuron.neuronio.neuronio_datamodule import NeuronIODataModule
 from elmneuron.tasks.neuronio_task import NeuronIOTask
 from elmneuron.transforms import NeuronIORouting
@@ -56,7 +59,7 @@ if __name__ == "__main__":
     general_config["seed"] = 0
     general_config["device"] = "cuda" if torch.cuda.is_available() else "cpu"
     general_config["short_training_run"] = False
-    general_config["verbose"] = general_config["short_training_run"]
+    general_config["verbose"] = True  # Enable verbose logging for debugging
     print("Device:", general_config["device"])
 
     # Seeding & Determinism
@@ -66,6 +69,9 @@ if __name__ == "__main__":
     torch.manual_seed(general_config["seed"])
     torch.cuda.manual_seed(general_config["seed"])
     torch.backends.cudnn.deterministic = True
+
+    # Set float32 matmul precision for better performance on Tensor Cores
+    torch.set_float32_matmul_precision("high")
 
     # ######### Data, Model and Training Config ##########
     print("Data, model and training configuration started...")
@@ -113,7 +119,7 @@ if __name__ == "__main__":
     model_config["num_synapse_per_branch"] = 100
     model_config["num_memory"] = 20
     model_config["memory_tau_min"] = 1.0
-    model_config["memory_tau_max"] = 150.0
+    model_config["memory_tau_max"] = 1000.0
     model_config["learn_memory_tau"] = False
     model_config["lambda_value"] = 5.0
     model_config["tau_b_value"] = 5.0
@@ -132,8 +138,8 @@ if __name__ == "__main__":
     train_config["file_load_fraction"] = (
         0.5 if general_config["short_training_run"] else 0.3
     )
-    train_config["num_prefetch_batch"] = 100
-    train_config["num_workers"] = 10
+    train_config["num_prefetch_batch"] = 20
+    train_config["num_workers"] = 5
     train_config["input_window_size"] = 500
 
     # Save Configs
@@ -160,12 +166,19 @@ if __name__ == "__main__":
     num_synapse = routing.num_synapse
 
     # Create DataModule
-    from elmneuron.neuronio.neuronio_data_utils import get_data_files_from_folder
+    from elmneuron.neuronio.neuronio_data_utils import (
+        get_data_files_from_folder,
+    )
 
+    print("Loading data files...")
     train_files = get_data_files_from_folder(data_config["train_data_dirs"])
+    print(f"  Train files: {len(train_files)} files found")
     valid_files = get_data_files_from_folder(data_config["valid_data_dirs"])
+    print(f"  Valid files: {len(valid_files)} files found")
     test_files = get_data_files_from_folder(data_config["test_data_dirs"])
+    print(f"  Test files: {len(test_files)} files found")
 
+    print("Creating NeuronIODataModule...")
     datamodule = NeuronIODataModule(
         train_files=train_files,
         val_files=valid_files,
@@ -182,17 +195,23 @@ if __name__ == "__main__":
         seed=general_config["seed"],
         verbose=general_config["verbose"],
     )
+    print("NeuronIODataModule created successfully")
 
-    # Create base ELM model
+    # Create base ELM model with hierarchical branch structure
+    # Note: compile_mode=None disables torch.compile as it causes loop unrolling
+    # for RNN-style models with Python loops, leading to massive graphs
     elm_model = ELM(
         num_input=num_synapse,  # After routing
         num_output=NEURONIO_LABEL_DIM,
         num_memory=model_config["num_memory"],
+        num_branch=model_config["num_branch"],
+        num_synapse_per_branch=model_config["num_synapse_per_branch"],
         lambda_value=model_config["lambda_value"],
         tau_b_value=model_config["tau_b_value"],
         memory_tau_min=model_config["memory_tau_min"],
         memory_tau_max=model_config["memory_tau_max"],
         learn_memory_tau=model_config["learn_memory_tau"],
+        compile_mode=None,  # Disable compilation to avoid loop unrolling
     )
 
     # Wrap in Lightning task module
@@ -286,7 +305,15 @@ if __name__ == "__main__":
     )
 
     # ######### Training ##########
-    print("Training started...")
+    print("Training started...", flush=True)
+    print("  Calling datamodule.setup()...", flush=True)
+    datamodule.setup("fit")
+    print("  DataModule setup complete", flush=True)
+    print(
+        f"  Train dataloader batches: {len(datamodule.train_dataloader())}", flush=True
+    )
+    print(f"  Val dataloader batches: {len(datamodule.val_dataloader())}", flush=True)
+    print("  Starting trainer.fit()...", flush=True)
 
     trainer.fit(lightning_module, datamodule=datamodule)
 

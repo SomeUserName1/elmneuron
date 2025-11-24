@@ -33,11 +33,16 @@ Reference:
 
 import math
 
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 import torch
 import torch.nn as nn
 
-from .modeling_utils import MLP, custom_tanh, inverse_scaled_sigmoid, scaled_sigmoid
+from .modeling_utils import (
+    MLP,
+    custom_tanh,
+    inverse_scaled_sigmoid,
+    scaled_sigmoid,
+)
 
 
 class ELM(pl.LightningModule):
@@ -86,8 +91,10 @@ class ELM(pl.LightningModule):
         learn_memory_tau: Whether to learn memory timescales (default: False)
         w_s_value: Initial synapse weight value (default: 0.5)
         delta_t: Fictitious timestep in ms (default: 1.0)
-        compile_mode: torch.compile mode (default: 'max-autotune')
+        compile_mode: torch.compile mode (default: 'default')
             Options: None, 'default', 'reduce-overhead', 'max-autotune'
+            Note: 'max-autotune' uses CUDAGraphs which doesn't work with
+            iterative/recurrent computations. Use 'default' for RNN-like models.
 
     Attributes:
         tau_m: Memory timescales (property, bounded)
@@ -204,9 +211,11 @@ class ELM(pl.LightningModule):
             _proto_tau_m, requires_grad=learn_memory_tau
         )
 
-        # Apply torch.compile to forward and dynamics methods for performance
+        # Apply torch.compile only to dynamics method for performance
+        # Note: Compiling forward() causes loop unrolling which creates graphs too large
+        # for Triton's PassManager. Only compiling dynamics() keeps the Python loop
+        # while still getting Triton optimization for per-timestep computation.
         if compile_mode is not None:
-            self.forward = torch.compile(self.forward, mode=compile_mode)
             self.dynamics = torch.compile(self.dynamics, mode=compile_mode)
 
     @property
@@ -346,6 +355,7 @@ class ELM(pl.LightningModule):
 
         return y_t, b_t, m_t
 
+    @torch.compiler.disable(recursive=False)
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         """
         Process a sequence through the Branch-ELM neuron.
@@ -383,6 +393,7 @@ class ELM(pl.LightningModule):
         # Stack outputs along time dimension
         return torch.stack(outputs, dim=1)
 
+    @torch.compiler.disable(recursive=False)
     def forward_with_states(
         self, X: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

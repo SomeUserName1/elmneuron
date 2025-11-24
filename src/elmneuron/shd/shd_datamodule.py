@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 import h5py
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 from torch.utils.data import DataLoader
 
 from .shd_data_loader import SHD, SHDAdding, random_val_split_SHD_data

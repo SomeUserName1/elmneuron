@@ -8,18 +8,27 @@ for various tokenization strategies and sequence chunking.
 from pathlib import Path
 from typing import Callable, Literal
 
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 import torch
 from torch.utils.data import DataLoader, Dataset, random_split
 
+# Hugging Face datasets for WikiText
 try:
-    from torchtext.data.utils import get_tokenizer
-    from torchtext.datasets import WikiText2, WikiText103
+    from datasets import load_dataset
 
-    TORCHTEXT_AVAILABLE = True
+    DATASETS_AVAILABLE = True
 except ImportError:
-    TORCHTEXT_AVAILABLE = False
-    print("Warning: torchtext not available. Install with: pip install torchtext")
+    DATASETS_AVAILABLE = False
+    print("Warning: datasets not available. Install with: pip install datasets")
+
+# SpaCy for tokenization
+try:
+    import spacy
+
+    SPACY_AVAILABLE = True
+except ImportError:
+    SPACY_AVAILABLE = False
+    print("Warning: spacy not available. Install with: pip install spacy")
 
 
 class TokenizedTextDataset(Dataset):
@@ -221,9 +230,15 @@ class BaseTextDataModule(pl.LightningDataModule):
             # Simple word tokenization
             return lambda text: text.lower().split()
         elif self.tokenizer_type == "basic":
-            # Basic English tokenizer
-            if TORCHTEXT_AVAILABLE:
-                return get_tokenizer("basic_english")
+            # Basic English tokenizer using SpaCy
+            if SPACY_AVAILABLE:
+                try:
+                    nlp = spacy.load("en_core_web_sm", disable=["parser", "ner"])
+                except OSError:
+                    # Model not installed, use blank English model
+                    nlp = spacy.blank("en")
+                # Return tokenizer function
+                return lambda text: [token.text.lower() for token in nlp(text)]
             else:
                 # Fallback to simple split
                 return lambda text: text.lower().split()
@@ -338,26 +353,28 @@ class WikiText2DataModule(BaseTextDataModule):
 
     def prepare_data(self) -> None:
         """Download WikiText-2 data."""
-        if not TORCHTEXT_AVAILABLE:
+        if not DATASETS_AVAILABLE:
             raise ImportError(
-                "torchtext is required for WikiText datasets. "
-                "Install with: pip install torchtext"
+                "datasets is required for WikiText datasets. "
+                "Install with: pip install datasets"
             )
 
-        # Download train, val, test splits
-        WikiText2(self.data_dir, split="train")
-        WikiText2(self.data_dir, split="valid")
-        WikiText2(self.data_dir, split="test")
+        # Download dataset (Hugging Face handles caching)
+        load_dataset("wikitext", "wikitext-2-raw-v1", cache_dir=str(self.data_dir))
 
     def setup(self, stage: str | None = None) -> None:
         """Setup WikiText-2 datasets."""
-        if not TORCHTEXT_AVAILABLE:
-            raise ImportError("torchtext is required for WikiText datasets")
+        if not DATASETS_AVAILABLE:
+            raise ImportError("datasets is required for WikiText datasets")
+
+        # Load dataset from Hugging Face
+        dataset = load_dataset(
+            "wikitext", "wikitext-2-raw-v1", cache_dir=str(self.data_dir)
+        )
 
         if stage == "fit" or stage is None:
             # Load training data
-            train_iter = WikiText2(self.data_dir, split="train")
-            train_text = " ".join(train_iter)
+            train_text = " ".join(dataset["train"]["text"])
 
             # Build vocabulary from training data
             self.train_dataset = TokenizedTextDataset(
@@ -373,8 +390,7 @@ class WikiText2DataModule(BaseTextDataModule):
             self.vocab = self.train_dataset.vocab
 
             # Load validation data
-            val_iter = WikiText2(self.data_dir, split="valid")
-            val_text = " ".join(val_iter)
+            val_text = " ".join(dataset["validation"]["text"])
 
             self.val_dataset = TokenizedTextDataset(
                 text_data=val_text,
@@ -386,14 +402,12 @@ class WikiText2DataModule(BaseTextDataModule):
 
         if stage == "test" or stage is None:
             # Load test data
-            test_iter = WikiText2(self.data_dir, split="test")
-            test_text = " ".join(test_iter)
+            test_text = " ".join(dataset["test"]["text"])
 
             # Use vocab from training (must call setup('fit') first)
             if self.vocab is None:
                 # Build vocab if not already built
-                train_iter = WikiText2(self.data_dir, split="train")
-                train_text = " ".join(train_iter)
+                train_text = " ".join(dataset["train"]["text"])
                 temp_dataset = TokenizedTextDataset(
                     text_data=train_text,
                     tokenizer=self.tokenizer,
@@ -420,21 +434,24 @@ class WikiText103DataModule(WikiText2DataModule):
 
     def prepare_data(self) -> None:
         """Download WikiText-103 data."""
-        if not TORCHTEXT_AVAILABLE:
-            raise ImportError("torchtext is required for WikiText datasets")
+        if not DATASETS_AVAILABLE:
+            raise ImportError("datasets is required for WikiText datasets")
 
-        WikiText103(self.data_dir, split="train")
-        WikiText103(self.data_dir, split="valid")
-        WikiText103(self.data_dir, split="test")
+        # Download dataset (Hugging Face handles caching)
+        load_dataset("wikitext", "wikitext-103-raw-v1", cache_dir=str(self.data_dir))
 
     def setup(self, stage: str | None = None) -> None:
         """Setup WikiText-103 datasets."""
-        if not TORCHTEXT_AVAILABLE:
-            raise ImportError("torchtext is required for WikiText datasets")
+        if not DATASETS_AVAILABLE:
+            raise ImportError("datasets is required for WikiText datasets")
+
+        # Load dataset from Hugging Face
+        dataset = load_dataset(
+            "wikitext", "wikitext-103-raw-v1", cache_dir=str(self.data_dir)
+        )
 
         if stage == "fit" or stage is None:
-            train_iter = WikiText103(self.data_dir, split="train")
-            train_text = " ".join(train_iter)
+            train_text = " ".join(dataset["train"]["text"])
 
             self.train_dataset = TokenizedTextDataset(
                 text_data=train_text,
@@ -447,8 +464,7 @@ class WikiText103DataModule(WikiText2DataModule):
 
             self.vocab = self.train_dataset.vocab
 
-            val_iter = WikiText103(self.data_dir, split="valid")
-            val_text = " ".join(val_iter)
+            val_text = " ".join(dataset["validation"]["text"])
 
             self.val_dataset = TokenizedTextDataset(
                 text_data=val_text,
@@ -459,12 +475,10 @@ class WikiText103DataModule(WikiText2DataModule):
             )
 
         if stage == "test" or stage is None:
-            test_iter = WikiText103(self.data_dir, split="test")
-            test_text = " ".join(test_iter)
+            test_text = " ".join(dataset["test"]["text"])
 
             if self.vocab is None:
-                train_iter = WikiText103(self.data_dir, split="train")
-                train_text = " ".join(train_iter)
+                train_text = " ".join(dataset["train"]["text"])
                 temp_dataset = TokenizedTextDataset(
                     text_data=train_text,
                     tokenizer=self.tokenizer,

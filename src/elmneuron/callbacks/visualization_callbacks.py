@@ -8,12 +8,12 @@ recording internal states, and visualizing model behavior.
 from pathlib import Path
 from typing import Any, Literal
 
+import lightning.pytorch as pl
 import matplotlib.pyplot as plt
 import numpy as np
-import pytorch_lightning as pl
 import seaborn as sns
 import torch
-from pytorch_lightning.callbacks import Callback
+from lightning.pytorch.callbacks import Callback
 
 
 class StateRecorderCallback(Callback):
@@ -234,13 +234,21 @@ class SequenceVisualizationCallback(Callback):
         if val_dataloader is None:
             return
 
+        # Handle case where val_dataloaders returns a list
+        if isinstance(val_dataloader, list):
+            val_dataloader = val_dataloader[0]
+
         # Get a batch
         batch = next(iter(val_dataloader))
         inputs, targets = batch
 
         # Move to device
         inputs = inputs.to(pl_module.device)
-        targets = targets.to(pl_module.device)
+        # Handle tuple targets (e.g., NeuronIO returns (spike_targets, soma_targets))
+        if isinstance(targets, (tuple, list)):
+            targets = tuple(t.to(pl_module.device) for t in targets)
+        else:
+            targets = targets.to(pl_module.device)
 
         # Get predictions
         with torch.no_grad():
@@ -251,7 +259,10 @@ class SequenceVisualizationCallback(Callback):
 
         # Limit to num_samples
         inputs = inputs[: self.num_samples]
-        targets = targets[: self.num_samples]
+        if isinstance(targets, tuple):
+            targets = tuple(t[: self.num_samples] for t in targets)
+        else:
+            targets = targets[: self.num_samples]
         outputs = outputs[: self.num_samples]
 
         # Create visualization based on task type
@@ -323,9 +334,17 @@ class SequenceVisualizationCallback(Callback):
         """Plot regression predictions."""
         num_samples = inputs.shape[0]
 
-        # Use last timestep for regression
-        if outputs.dim() == 3:
-            outputs = outputs[:, -1, :]
+        # Handle tuple targets (e.g., NeuronIO returns (spike_targets, soma_targets))
+        # Use soma targets (second element) for regression visualization
+        if isinstance(targets, tuple):
+            targets = targets[1]  # soma_targets
+            # For NeuronIO: outputs are (batch, time, 2) where last dim is [spike, soma]
+            if outputs.dim() == 3 and outputs.shape[-1] == 2:
+                outputs = outputs[..., 1]  # soma output (batch, time)
+        else:
+            # Use last timestep for regression (non-NeuronIO case)
+            if outputs.dim() == 3:
+                outputs = outputs[:, -1, :]
 
         fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 

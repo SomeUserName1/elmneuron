@@ -8,13 +8,13 @@ and postprocessing.
 
 from typing import Any, Literal
 
-import pytorch_lightning as pl
+import lightning.pytorch as pl
+import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 try:
-    from torchmetrics import MeanSquaredError
+    from torchmetrics import MeanAbsoluteError, MeanSquaredError
     from torchmetrics.classification import BinaryAUROC
 
     TORCHMETRICS_AVAILABLE = True
@@ -45,8 +45,8 @@ class NeuronIOTask(pl.LightningModule):
         optimizer: Literal["adam", "adamw", "sgd"] = "adam",
         scheduler: Literal["none", "cosine", "step"] | None = None,
         scheduler_kwargs: dict | None = None,
-        spike_loss_weight: float = 1.0,
-        soma_loss_weight: float = 1.0,
+        spike_loss_weight: float = 0.5,
+        soma_loss_weight: float = 0.5,
         y_train_soma_scale: float = DEFAULT_Y_TRAIN_SOMA_SCALE,
     ):
         """
@@ -86,8 +86,11 @@ class NeuronIOTask(pl.LightningModule):
             self.test_spike_auc = BinaryAUROC()
 
             self.train_soma_mse = MeanSquaredError()
+            self.train_soma_mae = MeanAbsoluteError()
             self.val_soma_mse = MeanSquaredError()
+            self.val_soma_mae = MeanAbsoluteError()
             self.test_soma_mse = MeanSquaredError()
+            self.test_soma_mae = MeanAbsoluteError()
         else:
             print("Warning: torchmetrics not available, metrics will not be tracked")
 
@@ -141,7 +144,9 @@ class NeuronIOTask(pl.LightningModule):
             tuple of (total_loss, spike_loss, soma_loss)
         """
         # Binary cross-entropy for spikes
-        spike_loss = F.binary_cross_entropy(spike_pred, spike_target, reduction="mean")
+        spike_loss = F.binary_cross_entropy_with_logits(
+            spike_pred, spike_target, reduction="mean"
+        )
 
         # MSE for soma voltage
         soma_loss = F.mse_loss(soma_pred, soma_target, reduction="mean")
@@ -182,7 +187,8 @@ class NeuronIOTask(pl.LightningModule):
         """Log epoch-level metrics."""
         if TORCHMETRICS_AVAILABLE:
             self.log("train/spike_auc", self.train_spike_auc, prog_bar=True)
-            self.log("train/soma_mse", self.train_soma_mse)
+            self.log("train/soma_rmse", np.sqrt(self.train_soma_mse))
+            self.log("train/soma_mae", self.train_soma_mae)
 
     def validation_step(self, batch: tuple, batch_idx: int) -> None:
         """Validation step."""
@@ -211,7 +217,8 @@ class NeuronIOTask(pl.LightningModule):
         """Log validation metrics."""
         if TORCHMETRICS_AVAILABLE:
             self.log("val/spike_auc", self.val_spike_auc, prog_bar=True)
-            self.log("val/soma_mse", self.val_soma_mse)
+            self.log("val/soma_rmse", np.sqrt(self.val_soma_mse))
+            self.log("val/soma_mae", self.val_soma_mae)
 
     def test_step(self, batch: tuple, batch_idx: int) -> None:
         """Test step."""
@@ -240,7 +247,8 @@ class NeuronIOTask(pl.LightningModule):
         """Log test metrics."""
         if TORCHMETRICS_AVAILABLE:
             self.log("test/spike_auc", self.test_spike_auc)
-            self.log("test/soma_mse", self.test_soma_mse)
+            self.log("test/soma_rmse", np.sqrt(self.test_soma_mse))
+            self.log("test/soma_mae", self.test_soma_mae)
 
     def configure_optimizers(self) -> Any:
         """Configure optimizer and optional scheduler."""

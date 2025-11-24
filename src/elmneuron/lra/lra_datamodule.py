@@ -18,8 +18,8 @@ from pathlib import Path
 from typing import Literal
 from urllib.request import urlretrieve
 
+import lightning.pytorch as pl
 import numpy as np
-import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader, Dataset
 

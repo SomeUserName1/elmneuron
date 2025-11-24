@@ -7,7 +7,7 @@ regression tasks with various temporal pooling strategies.
 
 from typing import Any, Literal
 
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

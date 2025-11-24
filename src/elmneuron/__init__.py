@@ -27,8 +27,11 @@ __author__ = "Aaron Spieler"
 __license__ = "MIT"
 
 # Import main model classes
-from elmneuron.expressive_leaky_memory_neuron import ELM as ELM_v1
+# Note: ELM v1 has been deprecated, only v2 is available
 from elmneuron.expressive_leaky_memory_neuron_v2 import ELM as ELM_v2
+
+# For backwards compatibility
+ELM = ELM_v2
 
 # Import utility functions
 from elmneuron.modeling_utils import (
@@ -44,7 +47,7 @@ __all__ = [
     # Version
     "__version__",
     # Main models
-    "ELM_v1",
+    "ELM",
     "ELM_v2",
     # Utilities
     "MLP",
