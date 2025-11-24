@@ -138,7 +138,7 @@ if __name__ == "__main__":
     train_config["file_load_fraction"] = (
         0.5 if general_config["short_training_run"] else 0.3
     )
-    train_config["num_prefetch_batch"] = 20
+    train_config["num_prefetch_batch"] = 40
     train_config["num_workers"] = 5
     train_config["input_window_size"] = 500
 

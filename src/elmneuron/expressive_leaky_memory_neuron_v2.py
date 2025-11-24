@@ -219,6 +219,7 @@ class ELM(pl.LightningModule):
             self.dynamics = torch.compile(self.dynamics, mode=compile_mode)
 
     @property
+    @torch.compile
     def tau_m(self) -> torch.Tensor:
         """
         Memory timescales (bounded by tau_min and tau_max).
@@ -234,6 +235,7 @@ class ELM(pl.LightningModule):
         )
 
     @property
+    @torch.compile
     def kappa_m(self) -> torch.Tensor:
         """
         Memory decay factors.
@@ -247,6 +249,7 @@ class ELM(pl.LightningModule):
         return torch.exp(-self.delta_t / torch.clamp(self.tau_m, min=1e-6))
 
     @property
+    @torch.compile
     def kappa_lambda(self) -> torch.Tensor:
         """
         Combined decay factor for modified memory update (v2).
@@ -265,6 +268,7 @@ class ELM(pl.LightningModule):
         )
 
     @property
+    @torch.compile
     def kappa_b(self) -> torch.Tensor:
         """
         Branch decay factors.
@@ -278,6 +282,7 @@ class ELM(pl.LightningModule):
         return torch.exp(-self.delta_t / torch.clamp(self.tau_b, min=1e-6))
 
     @property
+    @torch.compile
     def w_s(self) -> torch.Tensor:
         """
         Synapse weights (non-negative via ReLU, LEARNABLE).
@@ -291,6 +296,7 @@ class ELM(pl.LightningModule):
         """
         return torch.relu(self._proto_w_s)
 
+    @torch.compile
     def dynamics(
         self,
         x: torch.Tensor,
@@ -355,7 +361,6 @@ class ELM(pl.LightningModule):
 
         return y_t, b_t, m_t
 
-    @torch.compiler.disable(recursive=False)
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         """
         Process a sequence through the Branch-ELM neuron.
@@ -393,7 +398,6 @@ class ELM(pl.LightningModule):
         # Stack outputs along time dimension
         return torch.stack(outputs, dim=1)
 
-    @torch.compiler.disable(recursive=False)
     def forward_with_states(
         self, X: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

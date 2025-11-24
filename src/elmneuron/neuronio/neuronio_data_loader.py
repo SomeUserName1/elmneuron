@@ -67,7 +67,7 @@ class NeuronIO(IterableDataset):
         batch_size: int = 8,
         input_window_size: int = 500,
         file_load_fraction: float = 0.3,
-        ignore_time_from_start: int = 500,
+        ignore_time_from_start: int = 150,
         y_soma_threshold: float = DEFAULT_Y_SOMA_THRESHOLD,
         y_train_soma_bias: float = DEFAULT_Y_TRAIN_SOMA_BIAS,
         y_train_soma_scale: float = DEFAULT_Y_TRAIN_SOMA_SCALE,

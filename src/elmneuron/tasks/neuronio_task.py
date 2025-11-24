@@ -85,11 +85,11 @@ class NeuronIOTask(pl.LightningModule):
             self.val_spike_auc = BinaryAUROC()
             self.test_spike_auc = BinaryAUROC()
 
-            self.train_soma_mse = MeanSquaredError()
+            self.train_soma_mse = MeanSquaredError(squared=False)
             self.train_soma_mae = MeanAbsoluteError()
-            self.val_soma_mse = MeanSquaredError()
+            self.val_soma_mse = MeanSquaredError(squared=False)
             self.val_soma_mae = MeanAbsoluteError()
-            self.test_soma_mse = MeanSquaredError()
+            self.test_soma_mse = MeanSquaredError(squared=False)
             self.test_soma_mae = MeanAbsoluteError()
         else:
             print("Warning: torchmetrics not available, metrics will not be tracked")
@@ -187,7 +187,7 @@ class NeuronIOTask(pl.LightningModule):
         """Log epoch-level metrics."""
         if TORCHMETRICS_AVAILABLE:
             self.log("train/spike_auc", self.train_spike_auc, prog_bar=True)
-            self.log("train/soma_rmse", np.sqrt(self.train_soma_mse))
+            self.log("train/soma_rmse", self.train_soma_mse)
             self.log("train/soma_mae", self.train_soma_mae)
 
     def validation_step(self, batch: tuple, batch_idx: int) -> None:
@@ -217,7 +217,7 @@ class NeuronIOTask(pl.LightningModule):
         """Log validation metrics."""
         if TORCHMETRICS_AVAILABLE:
             self.log("val/spike_auc", self.val_spike_auc, prog_bar=True)
-            self.log("val/soma_rmse", np.sqrt(self.val_soma_mse))
+            self.log("val/soma_rmse", self.val_soma_mse)
             self.log("val/soma_mae", self.val_soma_mae)
 
     def test_step(self, batch: tuple, batch_idx: int) -> None:
@@ -247,7 +247,7 @@ class NeuronIOTask(pl.LightningModule):
         """Log test metrics."""
         if TORCHMETRICS_AVAILABLE:
             self.log("test/spike_auc", self.test_spike_auc)
-            self.log("test/soma_rmse", np.sqrt(self.test_soma_mse))
+            self.log("test/soma_rmse", self.test_soma_mse)
             self.log("test/soma_mae", self.test_soma_mae)
 
     def configure_optimizers(self) -> Any:

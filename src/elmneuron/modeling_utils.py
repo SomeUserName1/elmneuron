@@ -4,10 +4,12 @@ import torch
 import torch.nn as nn
 
 
+@torch.compile
 def scaled_sigmoid(x, lower_bound: float, upper_bound: float):
     return (upper_bound - lower_bound) * torch.sigmoid(x) + lower_bound
 
 
+@torch.compile
 def inverse_scaled_sigmoid(
     x: torch.Tensor, lower_bound: float, upper_bound: float
 ) -> torch.Tensor:
@@ -15,10 +17,12 @@ def inverse_scaled_sigmoid(
     return torch.log((x - lower_bound) / (upper_bound - x))
 
 
+@torch.compile
 def custom_tanh(x):
     return torch.tanh(x * 2 / 3) * 1.7159
 
 
+@torch.compile
 def create_interlocking_indices(num_input: int):
     half_num_input_data = num_input // 2
     half_range_steps = (torch.arange(num_input) % 2) * half_num_input_data
@@ -26,6 +30,7 @@ def create_interlocking_indices(num_input: int):
     return half_range_steps + single_steps
 
 
+@torch.compile
 def create_overlapping_window_indices(
     num_input: int, num_windows: int, num_elements_per_window: int
 ):
@@ -66,5 +71,6 @@ class MLP(nn.Module):
         layers.append(nn.Linear(next_input_size, num_output))
         self.network = nn.Sequential(*layers)
 
+    @torch.compile
     def forward(self, x):
         return self.network(x)

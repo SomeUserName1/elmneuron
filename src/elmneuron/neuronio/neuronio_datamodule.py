@@ -59,7 +59,7 @@ class NeuronIODataModule(pl.LightningDataModule):
         batch_size: int = 8,
         input_window_size: int = 500,
         file_load_fraction: float = 0.3,
-        ignore_time_from_start: int = 500,
+        ignore_time_from_start: int = 150,
         num_workers: int = 3,
         num_prefetch_batch: int = 5,
         y_soma_threshold: float = DEFAULT_Y_SOMA_THRESHOLD,
