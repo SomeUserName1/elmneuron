@@ -6,6 +6,161 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repository implements the Expressive Leaky Memory (ELM) neuron, a biologically-inspired phenomenological model of cortical neurons that efficiently captures sophisticated neuronal computations. The implementation features two variants: ELM v1 and Branch-ELM v2, with v2 achieving ~7× parameter reduction through hierarchical dendritic processing.
 
+**NEW**: The codebase has been modernized to use **PyTorch Lightning** for training, with modular DataModules, task-specific LightningModules, and visualization callbacks. See "Lightning Architecture" section below for details.
+
+## Lightning Architecture (Modern Approach)
+
+The codebase now uses PyTorch Lightning for a cleaner, more modular training architecture:
+
+### Core Components
+
+1. **Base ELM Model** (`expressive_leaky_memory_neuron_v2.py`): Dataset-agnostic, no JIT compilation
+2. **Transforms** (`transforms/`): Routing strategies (NeuronIORouting, RandomRouting) and sequentialization for non-sequential data
+3. **Task Modules** (`tasks/`): Task-specific Lightning wrappers
+   - `NeuronIOTask`: Biophysical neuron modeling (spike + soma prediction)
+   - `ClassificationTask`: Sequence classification
+   - `RegressionTask`: Sequence regression
+4. **DataModules**: PyTorch Lightning DataModules for all datasets
+   - **NeuronIO**: Biophysical neuron data (~115GB)
+   - **SHD**: Spiking Heidelberg Digits speech recognition
+   - **Vision**: MNIST, Fashion-MNIST, CIFAR-10, CIFAR-100
+   - **Text**: WikiText-2, WikiText-103, custom text
+   - **LRA**: Long Range Arena (5 tasks: ListOps, Text, Retrieval, Image, Pathfinder)
+5. **Callbacks** (`callbacks/`): Visualization and monitoring
+   - `StateRecorderCallback`: Records internal branch/memory states
+   - `SequenceVisualizationCallback`: Plots predictions vs targets
+   - `MemoryDynamicsCallback`: Visualizes memory unit evolution
+
+### Quick Start with Lightning
+
+```python
+# 1. Import Lightning components
+from elmneuron.expressive_leaky_memory_neuron_v2 import ELM
+from elmneuron.tasks.classification_task import ClassificationTask
+from elmneuron.vision.vision_datamodule import MNISTDataModule
+from elmneuron.transforms import FlattenSequentialization
+from lightning.pytorch import Trainer
+
+# 2. Setup DataModule with sequentialization
+datamodule = MNISTDataModule(
+    data_dir="./data",
+    batch_size=64,
+    sequentialization=FlattenSequentialization(flatten_order="row_major"),
+)
+
+# 3. Create base ELM model
+elm_model = ELM(
+    num_input=28*28,  # MNIST flattened
+    num_output=10,
+    num_memory=50,
+    lambda_value=5.0,
+)
+
+# 4. Wrap in task-specific module
+lightning_module = ClassificationTask(
+    model=elm_model,
+    learning_rate=1e-3,
+    optimizer="adam",
+)
+
+# 5. Train with Lightning Trainer
+trainer = Trainer(max_epochs=10, accelerator="auto")
+trainer.fit(lightning_module, datamodule=datamodule)
+trainer.test(lightning_module, datamodule=datamodule)
+```
+
+### Using Routing for Structured Data
+
+For NeuronIO or other spatially-structured inputs:
+
+```python
+from elmneuron.transforms import NeuronIORouting
+from elmneuron.neuronio.neuronio_datamodule import NeuronIODataModule
+from elmneuron.tasks.neuronio_task import NeuronIOTask
+
+# Create routing transform
+routing = NeuronIORouting(
+    num_input=1278,
+    num_branch=45,
+    num_synapse_per_branch=100,
+)
+
+# DataModule with routing
+datamodule = NeuronIODataModule(
+    train_files=train_files,
+    val_files=val_files,
+    routing=routing,
+    batch_size=8,
+)
+
+# Model receives routed inputs
+elm_model = ELM(
+    num_input=routing.num_synapse,  # After routing
+    num_output=2,
+    num_memory=20,
+    lambda_value=5.0,
+    tau_b_value=5.0,
+)
+
+# NeuronIO-specific task
+lightning_module = NeuronIOTask(model=elm_model, learning_rate=5e-4)
+```
+
+### Available Datasets
+
+All datasets have corresponding DataModules:
+
+```python
+# Biophysical modeling
+from elmneuron.neuronio.neuronio_datamodule import NeuronIODataModule
+
+# Speech recognition
+from elmneuron.shd.shd_datamodule import SHDDataModule
+
+# Vision tasks
+from elmneuron.vision.vision_datamodule import (
+    MNISTDataModule, FashionMNISTDataModule,
+    CIFAR10DataModule, CIFAR100DataModule
+)
+
+# Text modeling
+from elmneuron.text.text_datamodule import (
+    WikiText2DataModule, WikiText103DataModule, CustomTextDataModule
+)
+
+# Long-context benchmarks
+from elmneuron.lra.lra_datamodule import (
+    ListOpsDataModule,  # Hierarchical reasoning
+    LRATextDataModule,  # Sentiment analysis (4K tokens)
+    LRARetrievalDataModule,  # Document matching (8K tokens)
+    LRAImageDataModule,  # CIFAR-10 as sequences
+    LRAPathfinderDataModule,  # Path connectivity
+)
+```
+
+### Migration from Old Architecture
+
+**Old (Manual Training)**:
+```python
+model = ELM(...)
+optimizer = torch.optim.Adam(model.parameters())
+for epoch in range(num_epochs):
+    for X, y in dataloader:
+        optimizer.zero_grad()
+        loss = criterion(model(X), y)
+        loss.backward()
+        optimizer.step()
+```
+
+**New (Lightning)**:
+```python
+lightning_module = ClassificationTask(model=ELM(...), learning_rate=1e-3)
+trainer = Trainer(max_epochs=num_epochs)
+trainer.fit(lightning_module, datamodule=datamodule)
+```
+
+Benefits: Automatic device management, distributed training, callbacks, logging, checkpointing.
+
 ## Code Quality and Formatting
 
 This project uses pre-commit hooks for code quality:
@@ -41,7 +196,21 @@ pip install -e ".[wandb]"  # For experiment tracking
 pip install -e ".[all]"    # All optional dependencies
 ```
 
-### Method 2: Using Conda Environment
+### Method 2: Using venv and requirements.txt
+
+```bash
+# Create and activate virtual environment
+python -m venv elm_env
+source elm_env/bin/activate  # On Windows: elm_env\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Install the package (editable mode)
+pip install -e .
+```
+
+### Method 3: Using Conda Environment
 
 ```bash
 # Create conda environment (CPU or GPU version available)
@@ -56,14 +225,20 @@ conda activate elm_env
 pip install -e .
 ```
 
-### Method 3: Build and Install Wheel
+### Method 4: Build and Install Wheel
 
 ```bash
+# Install build tools if not already installed
+pip install build
+
 # Build the wheel
 python -m build --wheel
 
 # Install the wheel
 pip install dist/elmneuron-0.1.0-py3-none-any.whl
+
+# Or build both wheel and source distribution
+python -m build
 ```
 
 **Core Dependencies**: PyTorch >=2.0.0, NumPy, h5py, matplotlib, seaborn, scikit-learn, tqdm
@@ -253,69 +428,214 @@ The package is structured as an installable Python package named `elmneuron`:
 ```
 src/elmneuron/                              # Main package (installed as 'elmneuron')
 ├── __init__.py
-├── expressive_leaky_memory_neuron.py       # ELM v1 implementation
-├── expressive_leaky_memory_neuron_v2.py    # Branch-ELM v2 implementation
-├── modeling_utils.py                       # Shared utilities (MLP, activations, routing)
-├── neuronio/                               # NeuronIO dataset utilities
+├── expressive_leaky_memory_neuron.py       # ELM v1 implementation (legacy)
+├── expressive_leaky_memory_neuron_v2.py    # Branch-ELM v2 (modern, Lightning-ready)
+├── modeling_utils.py                       # Shared utilities (MLP, activations)
+│
+├── transforms/                             # Data routing and sequentialization
 │   ├── __init__.py
-│   ├── neuronio_data_loader.py
+│   ├── routing.py                          # NeuronIORouting, RandomRouting
+│   └── sequentialization.py                # Flatten, Patches, Tokenization
+│
+├── tasks/                                  # Task-specific Lightning modules
+│   ├── __init__.py
+│   ├── neuronio_task.py                    # Biophysical neuron modeling
+│   ├── classification_task.py              # Sequence classification
+│   └── regression_task.py                  # Sequence regression
+│
+├── callbacks/                              # Visualization callbacks
+│   ├── __init__.py
+│   └── visualization_callbacks.py          # StateRecorder, SequenceViz, MemoryDynamics
+│
+├── neuronio/                               # NeuronIO dataset
+│   ├── __init__.py
+│   ├── neuronio_data_loader.py             # Legacy data loader
+│   ├── neuronio_datamodule.py              # Lightning DataModule
 │   ├── neuronio_data_utils.py
 │   ├── neuronio_train_utils.py
 │   ├── neuronio_eval_utils.py
 │   └── neuronio_viz_utils.py
-└── shd/                                    # SHD dataset utilities
+│
+├── shd/                                    # Spiking Heidelberg Digits
+│   ├── __init__.py
+│   ├── shd_data_loader.py                  # Legacy data loader
+│   ├── shd_datamodule.py                   # Lightning DataModule
+│   └── shd_download_utils.py
+│
+├── vision/                                 # Vision datasets (MNIST, CIFAR)
+│   ├── __init__.py
+│   └── vision_datamodule.py                # MNIST, Fashion-MNIST, CIFAR-10/100
+│
+├── text/                                   # Text datasets (WikiText)
+│   ├── __init__.py
+│   └── text_datamodule.py                  # WikiText-2, WikiText-103, Custom
+│
+└── lra/                                    # Long Range Arena benchmark
     ├── __init__.py
-    ├── shd_data_loader.py
-    └── shd_download_utils.py
+    └── lra_datamodule.py                   # ListOps, Text, Retrieval, Image, Pathfinder
 
 notebooks/
-├── train_elm_on_neuronio.ipynb             # NeuronIO training notebook
-├── eval_elm_on_neuronio.ipynb              # NeuronIO evaluation notebook
-├── train_elm_on_shd.ipynb                  # SHD training notebook
-└── neuronio_train_script.py                # Script version of training
+├── train_elm_on_neuronio.ipynb             # NeuronIO training (Lightning)
+├── eval_elm_on_neuronio.ipynb              # NeuronIO evaluation
+├── train_elm_on_shd.ipynb                  # SHD training (Lightning)
+└── neuronio_train_script.py                # Script version (Lightning)
 
 tests/
-└── test_elm_models.py                      # Comprehensive test suite
+├── test_elm_models.py                      # Legacy model tests
+├── test_refactored_elm.py                  # Lightning model tests
+├── test_datamodules.py                     # DataModule tests
+├── test_vision_datamodules.py              # Vision DataModule tests
+├── test_text_datamodules.py                # Text DataModule tests
+├── test_lra_datamodules.py                 # LRA DataModule tests
+└── test_callbacks.py                       # Callback tests
 
 models/                                      # Pre-trained models (various sizes)
 ```
 
-**Import paths:**
+**Import paths (Lightning architecture):**
 ```python
-# Correct imports (package is 'elmneuron', not 'src')
+# Base model
+from elmneuron.expressive_leaky_memory_neuron_v2 import ELM
+
+# Transforms
+from elmneuron.transforms import (
+    NeuronIORouting, RandomRouting,
+    FlattenSequentialization, PatchSequentialization
+)
+
+# Task modules
+from elmneuron.tasks.neuronio_task import NeuronIOTask
+from elmneuron.tasks.classification_task import ClassificationTask
+from elmneuron.tasks.regression_task import RegressionTask
+
+# DataModules
+from elmneuron.neuronio.neuronio_datamodule import NeuronIODataModule
+from elmneuron.shd.shd_datamodule import SHDDataModule
+from elmneuron.vision.vision_datamodule import MNISTDataModule, CIFAR10DataModule
+from elmneuron.text.text_datamodule import WikiText2DataModule
+from elmneuron.lra.lra_datamodule import ListOpsDataModule
+
+# Callbacks
+from elmneuron.callbacks import (
+    StateRecorderCallback,
+    SequenceVisualizationCallback,
+    MemoryDynamicsCallback
+)
+```
+
+**Legacy imports (v1, manual training):**
+```python
 from elmneuron.expressive_leaky_memory_neuron import ELM as ELM_v1
-from elmneuron.expressive_leaky_memory_neuron_v2 import ELM as ELM_v2
-from elmneuron.modeling_utils import MLP, create_interlocking_indices
-from elmneuron.neuronio.neuronio_data_loader import NeuronIODataset
-from elmneuron.shd.shd_data_loader import SHDDataset
+from elmneuron.neuronio.neuronio_data_loader import NeuronIO
+from elmneuron.shd.shd_data_loader import SHD, SHDAdding
 ```
 
 ## Common Development Patterns
 
-### Creating a Model Instance
-
-Always check which version you're using and provide appropriate parameters:
+### Creating a Model Instance (Lightning)
 
 ```python
-# v1: uses tau_s_value
-from elmneuron.expressive_leaky_memory_neuron import ELM
-model_v1 = ELM(num_input=128, num_output=2, num_memory=20, tau_s_value=5.0)
-
-# v2: uses tau_b_value, w_s must be learnable
 from elmneuron.expressive_leaky_memory_neuron_v2 import ELM
-model_v2 = ELM(num_input=128, num_output=2, num_memory=20, tau_b_value=5.0)
+from elmneuron.tasks.classification_task import ClassificationTask
+
+# Create base ELM model
+elm_model = ELM(
+    num_input=128,
+    num_output=10,
+    num_memory=50,
+    lambda_value=5.0,
+    tau_b_value=5.0,
+)
+
+# Wrap in task-specific Lightning module
+lightning_module = ClassificationTask(
+    model=elm_model,
+    learning_rate=1e-3,
+    optimizer="adam",
+    scheduler="cosine",
+    scheduler_kwargs={"T_max": 1000},
+)
 ```
 
-### Training Loop Pattern
+### Training with Lightning
 
 ```python
-model = ELM_v2(**config)
+from lightning.pytorch import Trainer
+from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
+
+# Setup callbacks
+callbacks = [
+    ModelCheckpoint(
+        dirpath="./checkpoints",
+        monitor="val/accuracy",
+        mode="max",
+        save_top_k=3,
+    ),
+    EarlyStopping(
+        monitor="val/accuracy",
+        patience=10,
+        mode="max",
+    ),
+]
+
+# Create trainer
+trainer = Trainer(
+    max_epochs=100,
+    accelerator="auto",
+    callbacks=callbacks,
+    log_every_n_steps=50,
+)
+
+# Train and test
+trainer.fit(lightning_module, datamodule=datamodule)
+trainer.test(lightning_module, datamodule=datamodule, ckpt_path="best")
+```
+
+### Using Visualization Callbacks
+
+```python
+from elmneuron.callbacks import (
+    StateRecorderCallback,
+    SequenceVisualizationCallback,
+    MemoryDynamicsCallback,
+)
+
+callbacks = [
+    StateRecorderCallback(
+        record_every_n_epochs=5,
+        num_samples=8,
+        save_dir="./states",
+    ),
+    SequenceVisualizationCallback(
+        log_every_n_epochs=5,
+        num_samples=4,
+        task_type="classification",
+        save_dir="./visualizations",
+        log_to_wandb=True,
+    ),
+    MemoryDynamicsCallback(
+        log_every_n_epochs=5,
+        num_samples=2,
+        save_dir="./memory",
+        log_to_wandb=True,
+    ),
+]
+
+trainer = Trainer(max_epochs=100, callbacks=callbacks)
+```
+
+### Legacy: Manual Training Loop (v1/v2 without Lightning)
+
+```python
+from elmneuron.expressive_leaky_memory_neuron_v2 import ELM
+
+model = ELM(num_input=128, num_output=2, num_memory=20, tau_b_value=5.0)
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
 for epoch in range(num_epochs):
     for X_batch, y_batch in dataloader:
         optimizer.zero_grad()
-        predictions = model(X_batch)  # or model.neuronio_eval_forward(X_batch)
+        predictions = model(X_batch)
         loss = loss_fn(predictions, y_batch)
         loss.backward()
         optimizer.step()
@@ -324,9 +644,12 @@ for epoch in range(num_epochs):
 ### Accessing Internal States for Debugging
 
 ```python
-outputs, states, memory = model.neuronio_viz_forward(X)
-# states: synapse traces (v1) or branch activations (v2)
-# memory: memory unit activations over time
+# Using StateRecorderCallback (recommended)
+# States are automatically saved to disk every N epochs
+
+# Or manually access internal states
+# Note: This requires modifying the model's forward pass
+# For visualization during training, use SequenceVisualizationCallback instead
 ```
 
 ## Known Limitations

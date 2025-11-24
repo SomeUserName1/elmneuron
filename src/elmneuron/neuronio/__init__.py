@@ -11,6 +11,7 @@ from elmneuron.neuronio.neuronio_data_utils import (
     create_neuronio_input_type,
     visualize_training_batch,
 )
+from elmneuron.neuronio.neuronio_datamodule import NeuronIODataModule
 from elmneuron.neuronio.neuronio_eval_utils import (
     NeuronioEvaluator,
     compute_test_predictions,
@@ -22,6 +23,7 @@ from elmneuron.neuronio.neuronio_viz_utils import visualize_neuron_workings
 __all__ = [
     # Data loading
     "NeuronIO",
+    "NeuronIODataModule",
     "preprocess_data",
     # Data utilities
     "create_neuronio_input_type",
