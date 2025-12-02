@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 
 import kagglehub
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import wandb
@@ -35,6 +36,8 @@ from elmneuron.tasks.neuronio_task import NeuronIOTask
 from elmneuron.transforms import NeuronIORouting
 
 if __name__ == "__main__":
+
+    plt.switch_backend('agg')
     # ######### Logging Config ##########
     print("Wandb configuration started...")
 
@@ -58,8 +61,7 @@ if __name__ == "__main__":
     general_config = dict()
     general_config["seed"] = 0
     general_config["device"] = "cuda" if torch.cuda.is_available() else "cpu"
-    general_config["short_training_run"] = False
-    general_config["verbose"] = True  # Enable verbose logging for debugging
+    general_config["verbose"] = False
     print("Device:", general_config["device"])
 
     # Seeding & Determinism
@@ -71,7 +73,7 @@ if __name__ == "__main__":
     torch.backends.cudnn.deterministic = True
 
     # Set float32 matmul precision for better performance on Tensor Cores
-    torch.set_float32_matmul_precision("high")
+    torch.set_float32_matmul_precision("medium")
 
     # ######### Data, Model and Training Config ##########
     print("Data, model and training configuration started...")
@@ -126,21 +128,13 @@ if __name__ == "__main__":
 
     # Training Config
     train_config = dict()
-    train_config["num_epochs"] = 5 if general_config["short_training_run"] else 35
+    train_config["num_epochs"] = 5
     train_config["learning_rate"] = 5e-4
-    train_config["batch_size"] = 32 if general_config["short_training_run"] else 8
-    train_config["batches_per_epoch"] = (
-        1000 if general_config["short_training_run"] else 10000
-    )
-    train_config["batches_per_epoch"] = int(
-        8 / train_config["batch_size"] * train_config["batches_per_epoch"]
-    )
-    train_config["file_load_fraction"] = (
-        0.5 if general_config["short_training_run"] else 0.3
-    )
-    train_config["num_prefetch_batch"] = 40
-    train_config["num_workers"] = 5
-    train_config["input_window_size"] = 500
+    train_config["batch_size"] = 8
+    train_config["batches_per_epoch"] = 1000
+    train_config["num_prefetch_batch"] = 2
+    train_config["num_workers"] = 1
+    train_config["input_window_size"] = 256
 
     # Save Configs
     with open(str(artifacts_dir / "general_config.json"), "w", encoding="utf-8") as f:
@@ -186,7 +180,6 @@ if __name__ == "__main__":
         routing=routing,
         batch_size=train_config["batch_size"],
         input_window_size=train_config["input_window_size"],
-        file_load_fraction=train_config["file_load_fraction"],
         num_workers=train_config["num_workers"],
         num_prefetch_batch=train_config["num_prefetch_batch"],
         train_batches_per_epoch=train_config["batches_per_epoch"],
@@ -280,6 +273,7 @@ if __name__ == "__main__":
         save_dir=str(artifacts_dir),
         log_model=True,
     )
+    wandb_logger.watch(elm_model, log="all")
 
     # Log all configs to wandb
     wandb_logger.experiment.config.update(

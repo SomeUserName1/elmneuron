@@ -147,7 +147,6 @@ class NeuronIOTask(pl.LightningModule):
         spike_loss = F.binary_cross_entropy_with_logits(
             spike_pred, spike_target, reduction="mean"
         )
-
         # MSE for soma voltage
         soma_loss = F.mse_loss(soma_pred, soma_target, reduction="mean")
 
@@ -155,6 +154,10 @@ class NeuronIOTask(pl.LightningModule):
         total_loss = (
             self.spike_loss_weight * spike_loss + self.soma_loss_weight * soma_loss
         )
+
+        with open("preds-targets.txt", "a") as f:
+            f.write(f"Soma pred {soma_pred} \n Some target {soma_target}\n Spike pred: {spike_pred}\n Spike target {spike_target}\n")
+            exit(0)
 
         return total_loss, spike_loss, soma_loss
 
@@ -173,13 +176,22 @@ class NeuronIOTask(pl.LightningModule):
 
         # Log metrics
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
-        self.log("train/spike_loss", spike_loss, on_step=False, on_epoch=True)
-        self.log("train/soma_loss", soma_loss, on_step=False, on_epoch=True)
+        self.log("train/spike_loss", spike_loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log("train/soma_loss", soma_loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log("train/soma_pred", soma_pred, on_step=True, on_epoch=True)
+        self.log("train/soma_target", soma_target, on_step=True, on_epoch=True)
+        self.log("train/spike_pred", spike_pred, on_step=True, on_epoch=True)
+        self.log("train/spike_target", spike_target, on_step=True, on_epoch=True)
+        with open("preds-targets.txt", "a") as f:
+            f.write(f"Soma pred {soma_pred} \n Some target {soma_target}\n Spike pred: {spike_pred}\n Spike target {spike_target}\n")
+            exit(0)
+
 
         # Update metrics
         if TORCHMETRICS_AVAILABLE:
             self.train_spike_auc(spike_pred.flatten(), spike_target.flatten().int())
             self.train_soma_mse(soma_pred, soma_target)
+            self.train_soma_mae(soma_pred, soma_target)
 
         return loss
 
@@ -212,6 +224,7 @@ class NeuronIOTask(pl.LightningModule):
         if TORCHMETRICS_AVAILABLE:
             self.val_spike_auc(spike_pred.flatten(), spike_target.flatten().int())
             self.val_soma_mse(soma_pred, soma_target)
+            self.val_soma_mae(soma_pred, soma_target)
 
     def on_validation_epoch_end(self) -> None:
         """Log validation metrics."""
@@ -242,6 +255,7 @@ class NeuronIOTask(pl.LightningModule):
         if TORCHMETRICS_AVAILABLE:
             self.test_spike_auc(spike_pred.flatten(), spike_target.flatten().int())
             self.test_soma_mse(soma_pred, soma_target)
+            self.test_soma_mae(soma_pred, soma_target)
 
     def on_test_epoch_end(self) -> None:
         """Log test metrics."""

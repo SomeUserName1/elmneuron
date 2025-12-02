@@ -66,7 +66,6 @@ class NeuronIO(IterableDataset):
         synapse_types=None,
         batch_size: int = 8,
         input_window_size: int = 500,
-        file_load_fraction: float = 0.3,
         ignore_time_from_start: int = 150,
         y_soma_threshold: float = DEFAULT_Y_SOMA_THRESHOLD,
         y_train_soma_bias: float = DEFAULT_Y_TRAIN_SOMA_BIAS,
@@ -104,7 +103,6 @@ class NeuronIO(IterableDataset):
         self.file_paths = file_paths
         self.batch_size = batch_size
         self.input_window_size = input_window_size
-        self.file_load_fraction = file_load_fraction
         self.ignore_time_from_start = ignore_time_from_start
         self.y_soma_threshold = y_soma_threshold
         self.y_train_soma_bias = y_train_soma_bias
@@ -122,13 +120,10 @@ class NeuronIO(IterableDataset):
         self.synapse_types = torch.tensor(synapse_types, dtype=torch.float32)
 
         # Calculate batches per file
-        max_batches_per_file = (neuronio_sim_per_file * neuronio_sim_len) / (
+        self.batches_per_file = int(
+                    (neuronio_sim_per_file * neuronio_sim_len) / (
             batch_size * input_window_size
-        )
-        self.batches_per_file = int(file_load_fraction * max_batches_per_file)
-
-    def __len__(self):
-        return self.batches_per_epoch
+        ))
 
     def __iter__(self):
         """Yield batches, distributing files across DataLoader workers."""

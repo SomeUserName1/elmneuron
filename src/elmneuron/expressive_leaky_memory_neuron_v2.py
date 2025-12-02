@@ -396,7 +396,7 @@ class ELM(pl.LightningModule):
             outputs.append(y_t)
 
         # Stack outputs along time dimension
-        return torch.stack(outputs, dim=1)
+        return torch.stack(outputs, dim=-2)
 
     def forward_with_states(
         self, X: torch.Tensor

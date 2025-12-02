@@ -211,6 +211,7 @@ class SequenceVisualizationCallback(Callback):
             log_to_wandb: Log to wandb if available
         """
         super().__init__()
+        plt.switch_backend('agg')
         self.log_every_n_epochs = log_every_n_epochs
         self.num_samples = num_samples
         self.task_type = task_type

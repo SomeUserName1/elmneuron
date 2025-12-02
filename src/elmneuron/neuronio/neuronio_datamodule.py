@@ -58,7 +58,6 @@ class NeuronIODataModule(pl.LightningDataModule):
         routing: RoutingTransform | None = None,
         batch_size: int = 8,
         input_window_size: int = 500,
-        file_load_fraction: float = 0.3,
         ignore_time_from_start: int = 150,
         num_workers: int = 3,
         num_prefetch_batch: int = 5,
@@ -114,7 +113,6 @@ class NeuronIODataModule(pl.LightningDataModule):
         self.routing = routing
         self.batch_size = batch_size
         self.input_window_size = input_window_size
-        self.file_load_fraction = file_load_fraction
         self.ignore_time_from_start = ignore_time_from_start
         self.num_workers = num_workers
         self.num_prefetch_batch = num_prefetch_batch
@@ -174,6 +172,11 @@ class NeuronIODataModule(pl.LightningDataModule):
             train_end = int(0.8 * n_files)
             val_end = int(0.9 * n_files)
 
+            if val_end == n_files:
+                val_end = n_files - 1
+            if train_end == val_end:
+                train_end = val_end - 1
+
             self.train_files = all_files[:train_end]
             self.val_files = all_files[train_end:val_end]
             self.test_files = all_files[val_end:]
@@ -195,7 +198,6 @@ class NeuronIODataModule(pl.LightningDataModule):
                     synapse_types=self.synapse_types,
                     batch_size=self.batch_size,
                     input_window_size=self.input_window_size,
-                    file_load_fraction=self.file_load_fraction,
                     ignore_time_from_start=self.ignore_time_from_start,
                     y_soma_threshold=self.y_soma_threshold,
                     y_train_soma_bias=self.y_train_soma_bias,
@@ -219,7 +221,6 @@ class NeuronIODataModule(pl.LightningDataModule):
                     synapse_types=self.synapse_types,
                     batch_size=self.batch_size,
                     input_window_size=self.input_window_size,
-                    file_load_fraction=self.file_load_fraction,
                     ignore_time_from_start=self.ignore_time_from_start,
                     y_soma_threshold=self.y_soma_threshold,
                     y_train_soma_bias=self.y_train_soma_bias,
@@ -243,7 +244,6 @@ class NeuronIODataModule(pl.LightningDataModule):
                     synapse_types=self.synapse_types,
                     batch_size=self.batch_size,
                     input_window_size=self.input_window_size,
-                    file_load_fraction=self.file_load_fraction,
                     ignore_time_from_start=self.ignore_time_from_start,
                     y_soma_threshold=self.y_soma_threshold,
                     y_train_soma_bias=self.y_train_soma_bias,
@@ -265,7 +265,7 @@ class NeuronIODataModule(pl.LightningDataModule):
             batch_size=None,  # Already batched by NeuronIO
             num_workers=self.num_workers,
             pin_memory=True,
-            prefetch_factor=self.num_prefetch_batch // max(1, self.num_workers),
+            prefetch_factor=max(1, self.num_prefetch_batch // max(1, self.num_workers)),
             persistent_workers=self.num_workers > 0,
             collate_fn=self._collate_fn,
         )
@@ -279,7 +279,7 @@ class NeuronIODataModule(pl.LightningDataModule):
             batch_size=None,
             num_workers=self.num_workers,
             pin_memory=True,
-            prefetch_factor=self.num_prefetch_batch // max(1, self.num_workers),
+            prefetch_factor=max(self.num_prefetch_batch // max(1, self.num_workers), 1),
             persistent_workers=self.num_workers > 0,
             collate_fn=self._collate_fn,
         )
@@ -293,7 +293,7 @@ class NeuronIODataModule(pl.LightningDataModule):
             batch_size=None,
             num_workers=self.num_workers,
             pin_memory=True,
-            prefetch_factor=self.num_prefetch_batch // max(1, self.num_workers),
+            prefetch_factor=max(1, self.num_prefetch_batch // max(1, self.num_workers)),
             persistent_workers=self.num_workers > 0,
             collate_fn=self._collate_fn,
         )

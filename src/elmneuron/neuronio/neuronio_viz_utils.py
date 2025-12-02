@@ -8,7 +8,6 @@ import torch
 from ..modeling_utils import create_interlocking_indices
 from .neuronio_data_utils import DEFAULT_Y_SOMA_THRESHOLD, DEFAULT_Y_TRAIN_SOMA_BIAS
 
-
 def visualize_neuron_workings(
     neuron,
     input_spikes,
